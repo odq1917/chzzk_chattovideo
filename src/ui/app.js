@@ -12,6 +12,11 @@ const loadSettings = () => {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     // v0.2.0까지 저장된 설정: 배경 모양이 없었다. 상자 배경을 켜 두고 쓰던 사람은 상자 모드로 이어서
     if (saved.bgMode === undefined && saved.bgOpacity > 0) saved.bgMode = 'box';
+    // 0.3.0 테스트판의 좌우/위아래 여백 → 왼쪽·오른쪽·위·아래 따로
+    if (saved.bubblePadX !== undefined && saved.bubblePadLeft === undefined) saved.bubblePadLeft = saved.bubblePadRight = saved.bubblePadX;
+    if (saved.bubblePadY !== undefined && saved.bubblePadTop === undefined) saved.bubblePadTop = saved.bubblePadBottom = saved.bubblePadY;
+    delete saved.bubblePadX;
+    delete saved.bubblePadY;
     return { ...DEFAULT_SETTINGS, ...saved };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -80,7 +85,7 @@ const setChats = (list, label) => {
 };
 
 // ---------- 설정 입력 ----------
-const LAYOUT_KEYS = new Set(['fontFamily', 'fontSize', 'lineHeight', 'messageGap', 'textColor', 'textBold', 'boxW', 'padding', 'nickMode', 'nickColor', 'nickBold', 'showDonation', 'donationColor', 'palette', 'bgMode', 'bubblePadX', 'bubblePadY', 'bubbleGap']);
+const LAYOUT_KEYS = new Set(['fontFamily', 'fontSize', 'lineHeight', 'messageGap', 'textColor', 'textBold', 'boxW', 'padding', 'nickMode', 'nickColor', 'nickBold', 'showDonation', 'donationColor', 'palette', 'bgMode', 'bubblePadLeft', 'bubblePadRight', 'bubblePadTop', 'bubblePadBottom', 'bubbleGap', 'letterSpacing']);
 
 const clampBox = () => {
   s.width = Math.max(16, Math.round(s.width / 2) * 2); // 영상 코덱은 짝수 크기가 필요
@@ -105,6 +110,9 @@ const syncInputs = () => {
   for (const id of ['bubbleRows', 'bubbleShadowRow', 'bubbleHint']) $(id).hidden = !bubble;
   $('boxBgRows').hidden = s.bgMode !== 'box';
   $('messageGapRow').hidden = bubble; // 말풍선 모드에서는 「말풍선 사이 간격」을 쓴다
+  $('fadeTopRow').hidden = !s.fadeTop;
+  $('fontPickRow').hidden = !s.useLocalFonts;
+  if ($('fontPick').value !== s.fontFamily) $('fontPick').value = s.fontFamily; // 목록에 없으면 빈칸
   renderPalette();
 };
 
@@ -112,7 +120,8 @@ const onSettingChanged = (key) => {
   clampBox();
   saveSettings();
   if (['width', 'height', 'boxX', 'boxY', 'boxW', 'boxH'].includes(key)) syncInputs();
-  if (key === 'format' || key === 'nickMode' || key === 'bgMode') syncInputs();
+  if (['format', 'nickMode', 'bgMode', 'fadeTop', 'useLocalFonts', 'fontFamily'].includes(key)) syncInputs();
+  if (key === 'useLocalFonts') loadFontList();
   if (LAYOUT_KEYS.has(key)) reprepare();
   else {
     ensureBoxCanvas();
@@ -176,18 +185,52 @@ for (const b of document.querySelectorAll('[data-preset]')) {
   });
 }
 
-// 설치된 글꼴 목록
-(async () => {
-  const fallback = ['Malgun Gothic', 'NanumGothic', 'NanumSquare', 'Pretendard', 'Gulim', 'Dotum', 'Arial'];
-  let families = fallback;
-  try {
-    if (window.queryLocalFonts) {
-      const fonts = await window.queryLocalFonts();
-      families = [...new Set(fonts.map((f) => f.family))].sort((a, b) => a.localeCompare(b, 'ko'));
-    }
-  } catch {}
-  $('fontList').innerHTML = families.map((f) => `<option value="${f.replace(/"/g, '&quot;')}"></option>`).join('');
-})();
+// 글꼴 목록: 「설치된 글꼴 불러오기」를 켜면 PC의 글꼴 전체, 끄면 기본 몇 개만
+const FALLBACK_FONTS = ['Malgun Gothic', 'NanumGothic', 'NanumSquare', 'Pretendard', 'Gulim', 'Dotum', 'Arial'];
+let localFonts = null; // 한 번 불러오면 다시 묻지 않는다
+const escAttr = (f) => f.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+async function loadFontList() {
+  let families = FALLBACK_FONTS;
+  if (s.useLocalFonts) {
+    try {
+      if (!localFonts && window.queryLocalFonts) {
+        const fonts = await window.queryLocalFonts();
+        localFonts = [...new Set(fonts.map((f) => f.family))].sort((a, b) => a.localeCompare(b, 'ko'));
+      }
+    } catch {}
+    if (localFonts && localFonts.length) families = localFonts;
+    $('fontInfo').textContent = localFonts && localFonts.length ? `설치된 글꼴 ${localFonts.length}종을 불러왔어요. 목록의 글자는 그 글꼴로 보여요.` : '설치된 글꼴 목록을 불러오지 못했어요. 글꼴 이름을 직접 입력해 주세요.';
+  } else {
+    $('fontInfo').textContent = '글꼴 이름을 직접 입력하거나 기본 목록에서 고르세요.';
+  }
+  $('fontList').innerHTML = families.map((f) => `<option value="${escAttr(f)}"></option>`).join('');
+  $('fontPick').innerHTML = '<option value="">— 글꼴 고르기 —</option>' + families.map((f) => `<option value="${escAttr(f)}" style="font-family:&quot;${escAttr(f)}&quot;">${escAttr(f)}</option>`).join('');
+  $('fontPick').value = families.includes(s.fontFamily) ? s.fontFamily : '';
+}
+$('fontPick').addEventListener('change', () => {
+  if (!$('fontPick').value) return;
+  s.fontFamily = $('fontPick').value;
+  onSettingChanged('fontFamily');
+});
+loadFontList();
+
+// 왼쪽 단계(1~6)를 제목 눌러 접고 펴기. 접힌 상태는 이 PC에 기억
+const COLLAPSE_KEY = 'chattovideo:collapsed';
+let collapsed = [];
+try {
+  collapsed = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '[]');
+} catch {}
+document.querySelectorAll('.panel > section').forEach((sec, i) => {
+  const h = sec.querySelector('h2');
+  sec.classList.toggle('collapsed', collapsed.includes(i));
+  h.addEventListener('click', () => {
+    sec.classList.toggle('collapsed');
+    collapsed = [...document.querySelectorAll('.panel > section')].flatMap((x, j) => (x.classList.contains('collapsed') ? [j] : []));
+    try {
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed));
+    } catch {}
+  });
+});
 
 // ---------- 채팅 불러오기 ----------
 $('openFile').addEventListener('click', async () => {

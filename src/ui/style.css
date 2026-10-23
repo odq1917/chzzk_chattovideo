@@ -31,6 +31,12 @@ h1 span { font-size: 11px; color: var(--muted); font-weight: normal; }
 h2 { font-size: 13px; margin: 0 0 8px; }
 section { border-bottom: 1px solid var(--line); padding: 12px 0; }
 section:last-child { border-bottom: none; }
+/* 왼쪽 단계 접기/펴기: 제목만 남긴다 */
+.panel > section > h2 { cursor: pointer; user-select: none; }
+.panel > section > h2::before { content: '▾'; display: inline-block; width: 14px; color: var(--muted); }
+.panel > section.collapsed > h2::before { content: '▸'; }
+.panel > section.collapsed > h2 { margin-bottom: 0; }
+.panel > section.collapsed > :not(h2) { display: none !important; }
 label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); font-size: 12px; }
 label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); margin-top: 6px; }
 .radio label { flex-direction: row; align-items: center; gap: 6px; color: var(--text); margin-bottom: 4px; }

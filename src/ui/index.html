@@ -44,11 +44,17 @@
 
       <section>
         <h2>3. 글자</h2>
-        <label>글꼴 <input type="text" data-key="fontFamily" list="fontList" /></label>
+        <label>글꼴 이름 <input type="text" data-key="fontFamily" list="fontList" /></label>
         <datalist id="fontList"></datalist>
+        <label class="check"><input type="checkbox" data-key="useLocalFonts" /> 내 PC에 설치된 글꼴 불러오기</label>
+        <label id="fontPickRow">설치된 글꼴에서 고르기
+          <select id="fontPick"></select>
+        </label>
+        <p id="fontInfo" class="hint"></p>
         <div class="grid2">
           <label>글자 크기 <input type="number" data-key="fontSize" min="8" max="200" /></label>
           <label>줄 높이 배수 <input type="number" data-key="lineHeight" min="1" max="3" step="0.05" /></label>
+          <label>글자 간격 (px) <input type="number" data-key="letterSpacing" min="-10" max="50" step="0.5" /></label>
           <label id="messageGapRow">채팅 사이 간격 <input type="number" data-key="messageGap" min="0" max="100" /></label>
           <label>글자 색 <input type="color" data-key="textColor" /></label>
           <label>외곽선 두께 <input type="number" data-key="outlineWidth" min="0" max="20" step="0.5" /></label>
@@ -89,11 +95,13 @@
           <label>불투명도 <input type="range" data-key="bubbleOpacity" min="0" max="1" step="0.05" /></label>
           <label>모서리 둥글기 <input type="number" data-key="bubbleRadius" min="0" max="200" /></label>
           <label>말풍선 사이 간격 <input type="number" data-key="bubbleGap" min="0" max="100" /></label>
-          <label>좌우 여백 <input type="number" data-key="bubblePadX" min="0" max="100" /></label>
-          <label>위아래 여백 <input type="number" data-key="bubblePadY" min="0" max="100" /></label>
+          <label>왼쪽 여백 <input type="number" data-key="bubblePadLeft" min="-20" max="100" step="0.5" /></label>
+          <label>오른쪽 여백 <input type="number" data-key="bubblePadRight" min="-20" max="100" step="0.5" /></label>
+          <label>위 여백 <input type="number" data-key="bubblePadTop" min="-20" max="100" step="0.5" /></label>
+          <label>아래 여백 <input type="number" data-key="bubblePadBottom" min="-20" max="100" step="0.5" /></label>
         </div>
         <label id="bubbleShadowRow" class="check"><input type="checkbox" data-key="bubbleShadow" /> 말풍선 아래 옅은 그림자</label>
-        <p id="bubbleHint" class="hint">둥글기를 말풍선 높이의 절반 이상으로 하면 알약 모양이 돼요. 위아래 여백은 줄 높이 기준이에요.</p>
+        <p id="bubbleHint" class="hint">둥글기를 말풍선 높이의 절반 이상으로 하면 알약 모양이 돼요. 위·아래 여백은 줄 높이(글자 크기 × 줄 높이 배수) 바깥쪽 기준이라, 글자를 위아래로 옮기려면 위·아래 여백을 서로 다르게 주세요.</p>
         <div id="boxBgRows" class="grid2">
           <label>색 <input type="color" data-key="bgColor" /></label>
           <label>불투명도 <input type="range" data-key="bgOpacity" min="0" max="1" step="0.05" /></label>
@@ -111,6 +119,10 @@
           <label>후원 라벨 색 <input type="color" data-key="donationColor" /></label>
         </div>
         <label class="check"><input type="checkbox" data-key="fadeIn" /> 새 채팅 서서히 나타나기</label>
+        <label class="check"><input type="checkbox" data-key="fadeTop" /> 채팅 상자 위쪽에서 서서히 사라지기</label>
+        <div id="fadeTopRow" class="grid2">
+          <label>사라지는 구간 높이 (px) <input type="number" data-key="fadeTopHeight" min="0" max="2000" /></label>
+        </div>
         <label class="check"><input type="checkbox" data-key="showDonation" /> 후원 라벨 표시 (파일에 후원 정보가 있을 때)</label>
         <p class="hint">같은 1초에 올라온 채팅은 그 1초를 개수만큼 나눠 차례로 올라와요.</p>
       </section>

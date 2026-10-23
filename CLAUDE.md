@@ -58,13 +58,18 @@
 - **부드러운 스크롤:** 아직 올라오는 중인 채팅들의 남은 높이 `height × (1 − easeOutCubic(age / scrollDuration))`를 합쳐 전체를 그만큼 아래로 민다. 채팅이 몰려도 밀어 올리는 거리가 합쳐져 끊기지 않는다. 새 채팅은 선택적으로 서서히 나타남.
 - 외곽선(stroke)을 먼저, 채우기(fill)를 나중에.
 - **배경 모양 `bgMode` (v0.3.0):** `bubble`(채팅마다 말풍선, 기본) / `box`(상자 전체 하나, v0.2.0 방식) / `none`.
-  - 말풍선 너비 = 가장 긴 줄(줄 끝 공백 제외) + `bubblePadX`×2, 높이 = 줄 수 × 줄 높이 + `bubblePadY`×2. `layoutMessage`가 `bubbleW/bubbleH`를 계산하고, 채팅 높이 = `bubbleH + bubbleGap` (말풍선 모드에서는 `messageGap` 대신 `bubbleGap`).
-  - 줄바꿈 폭도 `bubblePadX`×2만큼 줄어든다. 둥글기는 `min(r, 높이/2)`라 크게 넣으면 알약 모양.
+  - 말풍선 너비 = 가장 긴 줄(줄 끝 공백 제외) + `bubblePadLeft + bubblePadRight`, 높이 = 줄 수 × 줄 높이 + `bubblePadTop + bubblePadBottom`. `layoutMessage`가 `bubbleW/bubbleH`를 계산하고, 채팅 높이 = `bubbleH + bubbleGap` (말풍선 모드에서는 `messageGap` 대신 `bubbleGap`).
+  - 여백은 처음에 좌우(`bubblePadX`)/위아래(`bubblePadY`) 둘이었다가 사용자 요청으로 네 방향 따로. 예전 키는 `loadSettings`에서 옮기고 지운다.
+  - 줄바꿈 폭도 좌우 여백만큼 줄어든다. 둥글기는 `min(r, 높이/2)`라 크게 넣으면 알약 모양.
   - 그림자는 **말풍선 바깥에만** 그린다 (`clip('evenodd')`). 반투명 말풍선 밑에 그림자를 그대로 깔면 안쪽이 어두워진다 — 처음에 그렇게 해서 참고 화면 221 대비 207로 어두웠다.
   - 말풍선도 채팅의 페이드 인 알파를 같이 받는다.
   - 기본값은 사용자가 준 1080p 참고 스크린샷을 픽셀로 재서 정했다: 글자 잉크 기준 좌우 ~12px, 한 줄 말풍선 51px(줄 간격 38px → 줄 위아래 ~7px), 모서리 ~12px, 말풍선 사이 ~18px, 밝은 배경 250 → 말풍선 221(= `#808080` 25%), 아래쪽으로 퍼지는 옅은 그림자, 흰 굵은 글씨 + 검은 외곽선. 우리 렌더를 같은 배경에 얹어 재면 안쪽 221로 같다. 참고 화면의 글꼴은 맑은 고딕보다 좁다(무슨 글꼴인지 모름).
   - `textBold`(채팅 내용 굵게, 기본 켬)도 v0.3.0에서 추가.
   - 예전 설정 이어받기: 저장된 설정에 `bgMode`가 없고 `bgOpacity > 0`이면 `box`로 (`loadSettings`).
+- **글자 간격 `letterSpacing` (v0.3.0):** 캔버스 `ctx.letterSpacing`은 글자마다 **뒤에** 간격을 붙인다. 그래서 줄바꿈 계산의 글자 폭에도 글자마다 더하고, 말풍선 너비에서는 마지막 글자 뒤 하나를 뺀다. 폭을 잴 때는 `ctx.letterSpacing = '0px'`로 (같은 캔버스를 그리기에도 쓰니까).
+- **위쪽 페이드 `fadeTop`/`fadeTopHeight` (v0.3.0, 기본 켬 120px):** `drawFrame` = `drawChats` → 위쪽 그라데이션을 `destination-out`으로 지움 → 상자 전체 배경은 그 뒤에 `destination-over`로 깐다 (배경까지 지워지지 않게). 사용자 참고 화면에도 위쪽 말풍선이 흐려지는 연출이 있다.
+- **왼쪽 단계 접기 (v0.3.0):** `.panel > section`의 `h2`를 누르면 `collapsed` 클래스. 접힌 번호 목록은 localStorage `chattovideo:collapsed`.
+- **글꼴 목록 (v0.3.0):** `useLocalFonts`(기본 켬)면 `queryLocalFonts()`로 설치된 글꼴 전체(이 PC 963종) → 글꼴 이름 입력칸의 datalist + 「설치된 글꼴에서 고르기」 select(옵션마다 그 글꼴로 표시). 끄면 기본 7개만. 권한은 main.js가 `local-fonts`만 허용.
 - **닉네임 색:** `palette`(기본 10색, 닉네임 FNV 해시로 배정 → 같은 닉네임은 항상 같은 색) / `single`(한 색) / `hidden`.
 - **`frameKey`:** 움직이는 중이면 `null`, 아니면 마지막 채팅 인덱스. 렌더링 때 키가 같으면 그 프레임은 다시 그리지 않고 "직전 프레임 반복"만 보낸다 (채팅 없는 구간이 매우 빠름).
 
@@ -164,6 +169,7 @@
 ## 9. 다음 작업 (사용자가 요청했고 계획까지 합의한 것)
 
 **말풍선 배경:** v0.3.0에서 만들었다 (4장). 사용자가 로컬 exe(`dist/`)로 테스트 중 → 피드백 반영 후 Release.
+- 1차 피드백 (2026-10-24): "스크롤 모션 괜찮고 말풍선 크기·여백도 괜찮다, 더 상세히 조절하고 싶다" → 단계 접기, 여백 네 방향, 글자 간격, 위쪽 페이드 켜고 끄기, 설치된 글꼴 불러오기 켜고 끄기를 추가 (Release 전, 버전은 그대로 0.3.0).
 - 이 PC 측정: 2분 WebM 상자만 3.1초(배경 없음) → 5.7초(말풍선 + 그림자), 26~30MB. 그림자 끄면 얼마나 빨라지는지는 안 재봤다.
 - 패키징 exe(`dist/win-unpacked`)로 WebM·ProRes·그린 MP4 10초 점검 통과. 한글 경로에서도 `npm run dist` 됨.
 - 같이 고친 것: `.panel > section > label > input {width:100%}`가 체크박스에도 걸려 「닉네임 굵게」 같은 체크박스 글자가 오른쪽으로 밀려 있던 버그 (v0.2.0부터 있었음).
