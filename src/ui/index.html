@@ -99,6 +99,7 @@
     <main class="stage">
       <div id="previewWrap" class="previewWrap">
         <canvas id="preview"></canvas>
+        <div class="bigHint">Space 재생/정지 · ←/→ 5초 이동 · 더블클릭 또는 Esc 나가기</div>
       </div>
 
       <div class="controls">
@@ -115,7 +116,23 @@
           <option value="checker">투명(체크무늬)</option>
           <option value="dark">어두운 배경</option>
           <option value="light">밝은 배경</option>
+          <option value="ref">참고 화면</option>
         </select>
+        <select id="zoom" title="미리보기 배율">
+          <option value="fit">화면에 맞춤</option>
+          <option value="1">실제 크기 (100%)</option>
+          <option value="1.5">150%</option>
+          <option value="2">200%</option>
+        </select>
+        <button id="bigView" title="전체 화면으로 크게 보기 (미리보기 더블클릭도 됨)">⛶ 크게 보기</button>
+      </div>
+
+      <div class="controls refRow">
+        <button id="refOpen" class="ghost">참고 화면 불러오기</button>
+        <input id="refFile" type="file" accept="image/*,video/*" hidden />
+        <span id="refName" class="refName">스크린샷이나 원본 영상을 깔아서 실제 크기감을 확인해 보세요 (미리보기 전용, 결과 영상에는 안 들어가요)</span>
+        <label id="refOffsetRow" class="inline" hidden>영상 0초 = 채팅 <input type="text" id="refOffset" value="00:00:00" size="8" /></label>
+        <button id="refClear" class="ghost small" hidden>지우기</button>
       </div>
 
       <section class="renderPanel">
