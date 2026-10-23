@@ -58,6 +58,12 @@ export const DEFAULT_SETTINGS = {
   bubblePadBottom: 7, // 마지막 줄 아래 여백 (줄 높이 기준)
   bubbleGap: 16, // 말풍선 사이 간격
   bubbleShadow: true, // 아래쪽 옅은 그림자
+  // 이모티콘 ({:이름:}) — 기본 크기는 참고 화면 기준 (글자 ~26px에 이모티콘 ~40px)
+  emojiScale: 1.5, // 글자 크기 대비
+  emojiGap: 2, // 이모티콘 좌우 간격 (px)
+  emojiYOffset: 0, // 위아래 위치 조정 (px, +면 아래로)
+  emojiMissing: 'raw', // 등록 안 된 이모티콘: 'raw'(원문 그대로) | 'hide'(지우기) | 'name'(회색 [이름])
+  emojiAnimate: true, // 움직이는 이모티콘 움직이기 (끄면 첫 프레임, 렌더링 빨라짐)
   // 채팅 상자 위쪽에서 서서히 사라지기
   fadeTop: true,
   fadeTopHeight: 120, // 사라지는 구간 높이 (px)
@@ -110,8 +116,17 @@ export const nicknameColor = (nickname, s) => {
 
 const fontOf = (s, bold) => `${bold ? 'bold ' : ''}${s.fontSize}px "${s.fontFamily}", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", sans-serif`;
 
-// 채팅 하나를 상자 폭에 맞춰 줄바꿈한다. 결과: { lines: [[{text, color, bold}...]...], height }
-const layoutMessage = (ctx, m, s, widthCache) => {
+// 치지직 이모티콘: 채팅 내용 속 {:이름:}
+export const EMOJI_RE = /\{:([^:{}\s]+):\}/g;
+const MISSING_EMOJI_COLOR = '#9ca3af';
+
+// 이모티콘 높이(px) — 글자 크기 대비 배율
+const emojiSize = (s) => Math.max(4, s.fontSize * (Number(s.emojiScale) || 1));
+
+// 채팅 하나를 상자 폭에 맞춰 줄바꿈한다.
+// 결과: { lines: [[{text, color, bold, w} | {emoji, w}...]...], lineHs: [줄마다 높이], height, anim }
+// lib.get(이름) → 불러온 이모티콘 { aspect, animated, ... } 또는 없음
+const layoutMessage = (ctx, m, s, widthCache, lib) => {
   const runs = [];
   if (s.showDonation && m.donation) runs.push({ text: `[${m.donation}]${s.nickSeparator}`, color: s.donationColor, bold: false });
   if (s.nickMode !== 'hidden' && m.nickname) runs.push({ text: m.nickname + s.nickSeparator, color: nicknameColor(m.nickname, s), bold: s.nickBold });
@@ -133,9 +148,30 @@ const layoutMessage = (ctx, m, s, widthCache) => {
     return w;
   };
 
-  // 글자 단위로 펼친 뒤, 폭을 넘으면 줄바꿈 (가능하면 마지막 공백에서)
+  // 글자 단위로 펼친 뒤, 폭을 넘으면 줄바꿈 (가능하면 마지막 공백에서). 이모티콘은 쪼개지지 않는 한 덩어리
   const chars = [];
-  for (const r of runs) for (const ch of Array.from(r.text)) chars.push({ ch, color: r.color, bold: r.bold, w: charW(ch, r.bold) + ls });
+  const pushText = (text, color, bold) => {
+    for (const ch of Array.from(text)) chars.push({ ch, color, bold, w: charW(ch, bold) + ls });
+  };
+  const size = emojiSize(s);
+  const gap = Number(s.emojiGap) || 0;
+  let anim = false;
+  const msgRun = runs.length - 1; // 이모티콘은 채팅 내용에서만
+  runs.forEach((r, ri) => {
+    if (ri !== msgRun || !r.text.includes('{:')) return pushText(r.text, r.color, r.bold);
+    let last = 0;
+    for (const mt of r.text.matchAll(EMOJI_RE)) {
+      pushText(r.text.slice(last, mt.index), r.color, r.bold);
+      last = mt.index + mt[0].length;
+      const e = lib && lib.get(mt[1]);
+      if (e) {
+        chars.push({ ch: '￼', emoji: mt[1], w: size * e.aspect + gap * 2 });
+        if (e.animated) anim = true;
+      } else if (s.emojiMissing === 'name') pushText(`[${mt[1]}]`, MISSING_EMOJI_COLOR, r.bold);
+      else if (s.emojiMissing !== 'hide') pushText(mt[0], r.color, r.bold); // 'raw': 원문 그대로
+    }
+    pushText(r.text.slice(last), r.color, r.bold);
+  });
 
   const lines = [];
   let start = 0;
@@ -159,15 +195,20 @@ const layoutMessage = (ctx, m, s, widthCache) => {
     const out = [];
     for (const c of line) {
       const last = out[out.length - 1];
-      if (last && last.color === c.color && last.bold === c.bold) {
+      if (c.emoji) out.push({ emoji: c.emoji, w: c.w });
+      else if (last && !last.emoji && last.color === c.color && last.bold === c.bold) {
         last.text += c.ch;
         last.w += c.w;
       } else out.push({ text: c.ch, color: c.color, bold: c.bold, w: c.w });
     }
     return out;
   });
+  // 이모티콘이 줄 높이보다 크면 그 줄만 이모티콘 높이로
   const lineH = s.fontSize * s.lineHeight;
-  if (!bubble) return { lines: merged, height: merged.length * lineH + s.messageGap };
+  const lineHs = lines.map((line) => (line.some((c) => c.emoji) ? Math.max(lineH, size) : lineH));
+  const textH = lineHs.reduce((a, b) => a + b, 0);
+  if (!chars.length) return { lines: [], lineHs: [], height: 0, anim: false }; // 이모티콘만 있고 지우기로 했을 때
+  if (!bubble) return { lines: merged, lineHs, height: textH + s.messageGap, anim };
   // 말풍선 너비 = 가장 긴 줄(줄 끝 공백, 마지막 글자 뒤 글자 간격 제외) + 좌우 여백
   let textW = 0;
   for (const line of lines) {
@@ -175,17 +216,32 @@ const layoutMessage = (ctx, m, s, widthCache) => {
     while (end > 0 && line[end - 1].ch === ' ') end--;
     let w = 0;
     for (let k = 0; k < end; k++) w += line[k].w;
-    if (end > 0) w -= ls;
+    if (end > 0 && !line[end - 1].emoji) w -= ls;
     textW = Math.max(textW, w);
   }
-  const bubbleH = merged.length * lineH + s.bubblePadTop + s.bubblePadBottom;
-  return { lines: merged, bubbleW: Math.ceil(textW + s.bubblePadLeft + s.bubblePadRight), bubbleH, height: bubbleH + s.bubbleGap };
+  const bubbleH = textH + s.bubblePadTop + s.bubblePadBottom;
+  return { lines: merged, lineHs, bubbleW: Math.ceil(textW + s.bubblePadLeft + s.bubblePadRight), bubbleH, height: bubbleH + s.bubbleGap, anim };
 };
 
-// 채팅 전체를 미리 줄바꿈/높이 계산해 둔다 (설정이 바뀌면 다시)
-export const prepare = (ctx, timeline, s) => {
+// 채팅 전체를 미리 줄바꿈/높이 계산해 둔다 (설정이나 불러온 이모티콘이 바뀌면 다시)
+export const prepare = (ctx, timeline, s, lib) => {
   const cache = new Map();
-  return timeline.map((m) => ({ t: m.t, ...layoutMessage(ctx, m, s, cache) }));
+  return timeline.map((m) => ({ t: m.t, ...layoutMessage(ctx, m, s, cache, lib) }));
+};
+
+// 움직이는 이모티콘의 t초 시점 프레임. 채팅이 올라온 시각이 아니라 영상 전체 시계 기준이라
+// 누가 언제 쳤든 같은 이모티콘은 같은 프레임으로 움직이고, 중간부터 잘라 뽑아도 사이클이 이어진다.
+export const emojiFrameAt = (e, t, animate = true) => {
+  if (!e.animated || !animate) return e.frames[0];
+  const ms = (((t * 1000) % e.total) + e.total) % e.total;
+  let lo = 0;
+  let hi = e.starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (e.starts[mid] <= ms) lo = mid;
+    else hi = mid - 1;
+  }
+  return e.frames[lo];
 };
 
 // t초 시점까지 올라온 마지막 채팅 인덱스 (없으면 -1)
@@ -209,6 +265,14 @@ const easeOutCubic = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
 export const frameKey = (items, t, s) => {
   const idx = lastIndexAt(items, t);
   if (idx >= 0 && t - items[idx].t < s.scrollDuration) return null; // 움직이는 중
+  // 움직이는 이모티콘이 화면에 있으면 매 프레임 다르다
+  if (s.emojiAnimate) {
+    let h = 0;
+    for (let j = idx; j >= 0 && h < s.boxH; j--) {
+      if (items[j].anim) return null;
+      h += items[j].height;
+    }
+  }
   return idx;
 };
 
@@ -226,9 +290,9 @@ const roundRect = (ctx, x, y, w, h, r, newPath = true) => {
 
 // 채팅 상자 하나를 그린다. 새 채팅은 아래에서 밀고 올라오고, 예전 채팅은 위로 사라진다.
 // 순서: 채팅 → 위쪽 페이드(채팅만 지움) → 상자 전체 배경을 맨 뒤에 깔기(destination-over)
-export const drawFrame = (ctx, items, t, s) => {
+export const drawFrame = (ctx, items, t, s, lib) => {
   const { boxW: W, boxH: H } = s;
-  drawChats(ctx, items, t, s);
+  drawChats(ctx, items, t, s, lib);
   if (s.fadeTop && s.fadeTopHeight > 0) {
     const fh = Math.min(H, s.fadeTopHeight);
     ctx.save();
@@ -251,7 +315,7 @@ export const drawFrame = (ctx, items, t, s) => {
   }
 };
 
-const drawChats = (ctx, items, t, s) => {
+const drawChats = (ctx, items, t, s, lib) => {
   const { boxW: W, boxH: H, padding: P } = s;
   const bubble = s.bgMode === 'bubble';
   const idx = lastIndexAt(items, t);
@@ -270,6 +334,7 @@ const drawChats = (ctx, items, t, s) => {
   ctx.lineJoin = 'round';
   ctx.miterLimit = 2;
   ctx.letterSpacing = `${Number(s.letterSpacing) || 0}px`; // save/restore로 원래대로 돌아간다
+  ctx.imageSmoothingQuality = 'high'; // 이모티콘 확대/축소
 
   const lineH = s.fontSize * s.lineHeight;
   const baselineOffset = (lineH - s.fontSize) / 2 + s.fontSize * 0.86;
@@ -306,12 +371,24 @@ const drawChats = (ctx, items, t, s) => {
       ctx.restore();
     }
     ctx.globalAlpha = alpha;
-    const textTop = bubble ? top + s.bubblePadTop : top;
+    let lineTop = bubble ? top + s.bubblePadTop : top;
     for (let li = 0; li < it.lines.length; li++) {
-      const y = textTop + li * lineH + baselineOffset;
-      if (y < -lineH || y > H + lineH) continue;
+      const lh = it.lineHs[li];
+      const y = lineTop + (lh - lineH) / 2 + baselineOffset; // 줄이 이모티콘 때문에 커져도 글자는 가운데
+      const thisTop = lineTop;
+      lineTop += lh;
+      if (thisTop + lh < 0 || thisTop > H) continue;
       let x = bubble ? P + s.bubblePadLeft : P;
       for (const run of it.lines[li]) {
+        if (run.emoji) {
+          const e = lib && lib.get(run.emoji);
+          if (e) {
+            const size = emojiSize(s);
+            ctx.drawImage(emojiFrameAt(e, t, s.emojiAnimate), x + (Number(s.emojiGap) || 0), thisTop + (lh - size) / 2 + (Number(s.emojiYOffset) || 0), size * e.aspect, size);
+          }
+          x += run.w;
+          continue;
+        }
         ctx.font = fontOf(s, run.bold);
         if (s.outlineWidth > 0) {
           ctx.lineWidth = s.outlineWidth;

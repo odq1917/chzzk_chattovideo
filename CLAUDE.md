@@ -27,12 +27,14 @@
 |---|---|
 | `src/main.js` | Electron 메인: 창, 파일 열기/저장 대화상자, 폴더 열기, 창 전체 화면(`set-fullscreen`), 점검 모드 결과 출력. **인코딩은 여기 없다** |
 | `src/preload.js` | `window.api` 노출. 대화상자류는 IPC, 인코딩은 `encoder.js`를 직접 호출 |
+| `src/emojiStore.js` | 이모티콘 보관함 (메인 프로세스): 앱 데이터 폴더 `emojis/` + `registry.json`, 주소에서 받기 / 파일·폴더 등록 / 삭제 |
 | `src/encoder.js` | ffmpeg 실행/인코딩 (preload에서 require). 형식별 ffmpeg 인자, 프레임 쓰기(백프레셔), WebM 구간 병렬 인코딩 + 이어붙이기 |
 | `src/ui/index.html` | 화면. 왼쪽 설정 패널(1 불러오기 ~ 6 연출), 오른쪽 미리보기·재생·참고 화면·7 영상 만들기 |
 | `src/ui/style.css` | 2단 레이아웃. `[hidden]{display:none!important}` 필수 (label의 `display:flex`가 hidden을 덮어서 숨김이 안 되던 버그) |
 | `src/ui/app.js` | 화면 로직: 설정 저장/바인딩, 채팅 불러오기, 미리보기, 참고 화면, 배율, 크게 보기, 렌더링 루프, 점검 모드 |
 | `src/ui/shared/renderer.js` | 타이밍, 줄바꿈, 닉네임 색, 스크롤 연출, 그리기 (순수 함수) |
-| `src/ui/shared/parse.js` | CSV / 텍스트 파싱 |
+| `src/ui/shared/parse.js` | CSV / 텍스트 파싱 (+ 이모티콘 주소 `emojiUrls`) |
+| `src/ui/emoji.js` | 이모티콘 화면 쪽: `ImageDecoder`로 프레임 풀기, 쓰인 이모티콘 목록·자동 받기·등록 UI (6. 이모티콘 칸) |
 | `.github/workflows/release.yml` | Windows에서 점검 → exe 빌드 → 점검 → Release |
 | `dev/ui-basic.cjs`, `dev/ui-reference.cjs` | Playwright로 Electron 화면을 띄워 스크린샷 찍는 개발용 스크립트 (8장) |
 
@@ -42,6 +44,7 @@
 - **CSV**: 헤더 이름으로 열을 찾는다. `시간`/`time`, `닉네임`/`nickname`, `채팅내용`/`message`/`내용`, `후원`. RFC4180 따옴표 처리, BOM 무시.
 - **텍스트** (추출기 「클립보드 복사」): 한 줄에 `{1} [00:10:05] <닉네임> [영상 후원 3,340원] 내용` — `{n}`, `<닉>`, 후원 라벨은 있어도 없어도 됨.
 - 추출기에서 표시 항목을 끄고 내보내면 해당 열/부분이 빠진다. 시간이 없으면 영상화 불가.
+- **이모티콘 주소 (추출기 v1.9.0~):** CSV `이모티콘` 열(처음 쓰인 채팅에 `이름=주소 이름=주소`), 텍스트 끝 `#이모티콘 이름 주소` 줄 → `parseChatText` 결과 배열의 `emojiUrls` ({이름: 주소}).
 - **알려진 한계:** 여러 VOD(`{n}` 또는 `VOD` 열)가 섞인 내보내기는 VOD 구분 없이 시간으로 섞인다.
 - 추출기의 내보내기 형식을 바꾸면 이 파서도 같이 고친다.
 
@@ -72,6 +75,17 @@
 - **글꼴 목록 (v0.3.0):** `useLocalFonts`(기본 켬)면 `queryLocalFonts()`로 설치된 글꼴 전체(이 PC 963종) → 글꼴 이름 입력칸의 datalist + 「설치된 글꼴에서 고르기」 select(옵션마다 그 글꼴로 표시). 끄면 기본 7개만. 권한은 main.js가 `local-fonts`만 허용.
 - **닉네임 색:** `palette`(기본 10색, 닉네임 FNV 해시로 배정 → 같은 닉네임은 항상 같은 색) / `single`(한 색) / `hidden`.
 - **`frameKey`:** 움직이는 중이면 `null`, 아니면 마지막 채팅 인덱스. 렌더링 때 키가 같으면 그 프레임은 다시 그리지 않고 "직전 프레임 반복"만 보낸다 (채팅 없는 구간이 매우 빠름).
+
+### 이모티콘 (v0.3.0)
+- 채팅 내용의 `{:이름:}`(`EMOJI_RE`, renderer.js). 내용(message)에서만 바꾼다 (닉네임·후원 라벨은 그대로).
+- **주소는 규칙으로 못 만든다** (이름 `marongHi` → 파일 `marong5Hi.png`). 추출기가 VOD 채팅의 `extras.emojis`를 그대로 내보낸 주소를 쓴다. 치지직 기본 이모티콘(`d_54` 등)도 같은 방식으로 주소가 와서 따로 "기본 팩"을 둘 필요가 없었다 (사용자 제안이었음). 한 번 받으면 보관함에 남는다.
+- 흐름: 채팅 불러오기 → `countEmojis`(많이 쓰인 순) → 보관함 목록 → 등록된 것 읽어서 `decodeEmoji` → 주소가 있고 미등록(또는 자동으로 받은 것인데 주소가 바뀜)이면 4개씩 동시에 받기 → 다시 줄바꿈. 직접 지정한 이미지는 자동 받기가 덮어쓰지 않는다.
+- 보관함: `userData/emojis/`, `registry.json` = `{이름: {file, source: 'auto'|'file', url?, at}}`. 폴더 등록은 파일 이름(확장자 뺀 것) = 이름. 화면에서는 IPC로 바이트를 받아 쓴다(`emoji-read`).
+- `decodeEmoji`: `ImageDecoder`로 GIF/APNG/WebP 프레임을 전부 `ImageBitmap`으로 + 프레임 시작 시각. 10ms 이하 프레임은 100ms(브라우저와 같게). 실패하면 `createImageBitmap` 한 장.
+- 레이아웃: 이모티콘은 쪼개지지 않는 한 글자(`￼`), 폭 = 높이 × 가로세로비 + `emojiGap`×2. 높이 = `fontSize × emojiScale`(기본 1.5 — 참고 화면에서 글자 ~26px에 이모티콘 ~40px). **이모티콘이 줄 높이보다 크면 그 줄만 높아진다** (`lineHs`), 글자는 그 줄 가운데.
+- 미등록: `emojiMissing` = `raw`(원문 `{:이름:}`) / `name`(회색 `[이름]`) / `hide`(지움 — 이모티콘만 있던 채팅은 높이 0으로 빠진다).
+- **움직이는 이모티콘:** 프레임 = `(t × 1000) mod 한 바퀴 길이`, t는 영상(VOD) 시계 (`emojiFrameAt`). 누가 언제 쳤든 같은 이모티콘은 같은 프레임, 중간부터 잘라 뽑아도 사이클 유지. 화면에 움직이는 이모티콘이 있으면 `frameKey`가 null(반복 최적화 안 됨) → `emojiAnimate` 끄면 첫 프레임 고정.
+- 실측 (VOD 15822204 실제 채팅 1,948개, 48종 중 22종 움직임): 자동 받기 48/48, 60초 WebM 상자만 2.9초. 프레임마다 이모티콘 영역 해시가 다 달라서 움직임 확인. (ffmpeg `-ss`를 입력 앞에 두고 VP9 알파를 한 장씩 뽑으면 같은 그림이 나와서 처음에 "안 움직인다"고 잘못 볼 뻔했다 — `trim` + `framemd5`로 확인할 것.)
 
 ### 설정
 - `DEFAULT_SETTINGS`(renderer.js)가 기준. 화면 입력은 `data-key="설정이름"`으로 자동 바인딩, localStorage `chattovideo:settings`에 저장.
@@ -155,7 +169,8 @@
   # 형식: webm | mov-qtrle | mov-prores | mp4-green, 출력: full | box
   # 리눅스 헤드리스: xvfb-run -a npx electron . --no-sandbox --smoke-test=...
   ```
-  결과 JSON에 `size`, `frames`, `seconds`, `parts`(WebM 조각 수). 성능 비교는 `--smoke-seconds=120`으로 5장 표와 비교.
+  결과 JSON에 `size`, `frames`, `seconds`, `parts`(WebM 조각 수), `emojis`(불러온 이모티콘 수), `emojiAnimated`, `emojiSummary`.
+  - 실제 채팅 파일로: `--smoke-chat=파일.csv --smoke-start=초` (이모티콘 자동 받기까지 기다린 뒤 렌더링). 성능 비교는 `--smoke-seconds=120`으로 5장 표와 비교.
   확인: `ffprobe -count_frames`로 프레임 수, WebM은 `ALPHA_MODE=1` 태그.
 - **화면 확인 (Playwright):** 전역 playwright 필요(`npm i -g playwright`).
   ```bash
@@ -173,6 +188,8 @@
 - 이 PC 측정: 2분 WebM 상자만 3.1초(배경 없음) → 5.7초(말풍선 + 그림자), 26~30MB. 그림자 끄면 얼마나 빨라지는지는 안 재봤다.
 - 패키징 exe(`dist/win-unpacked`)로 WebM·ProRes·그린 MP4 10초 점검 통과. 한글 경로에서도 `npm run dist` 됨.
 - 같이 고친 것: `.panel > section > label > input {width:100%}`가 체크박스에도 걸려 「닉네임 굵게」 같은 체크박스 글자가 오른쪽으로 밀려 있던 버그 (v0.2.0부터 있었음).
+
+**이모티콘 치환 / 움직이는 이모티콘:** v0.3.0에서 만들었다 (4장 이모티콘). 사용자 테스트 대기. 아래는 처음 합의한 계획 (기록용).
 
 **이모티콘 치환:** 채팅 속 `{:d_41:}` → 이름 `d_41`.
 - 불러온 채팅에서 쓰인 이모티콘을 사용 횟수순으로 보여주고, 등록됨/미등록을 표시한다 ("23종 중 5종 미등록").
