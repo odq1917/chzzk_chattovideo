@@ -24,8 +24,10 @@ export const DEFAULT_SETTINGS = {
   boxH: 720,
   // 글자
   fontFamily: 'Malgun Gothic',
+  useLocalFonts: true, // 화면 전용: 설치된 글꼴 목록을 불러올지
   fontSize: 24,
   lineHeight: 1.4, // 글자 크기 대비 줄 높이
+  letterSpacing: 0, // 글자 사이 간격 (px, 음수면 좁게)
   messageGap: 6, // 채팅 사이 간격 (px)
   textColor: '#ffffff',
   textBold: true, // 채팅 내용 굵게
@@ -50,10 +52,15 @@ export const DEFAULT_SETTINGS = {
   bubbleColor: '#808080',
   bubbleOpacity: 0.25, // 0~1
   bubbleRadius: 12, // 높이의 절반 이상이면 알약 모양
-  bubblePadX: 12, // 글자 왼쪽/오른쪽 여백
-  bubblePadY: 7, // 줄 위/아래 여백 (줄 높이 기준)
+  bubblePadLeft: 12, // 글자 왼쪽 여백
+  bubblePadRight: 12, // 글자 오른쪽 여백
+  bubblePadTop: 7, // 첫 줄 위 여백 (줄 높이 기준)
+  bubblePadBottom: 7, // 마지막 줄 아래 여백 (줄 높이 기준)
   bubbleGap: 16, // 말풍선 사이 간격
   bubbleShadow: true, // 아래쪽 옅은 그림자
+  // 채팅 상자 위쪽에서 서서히 사라지기
+  fadeTop: true,
+  fadeTopHeight: 120, // 사라지는 구간 높이 (px)
   // 연출
   scrollDuration: 0.22, // 새 채팅이 밀고 올라오는 시간(초)
   fadeIn: true,
@@ -111,7 +118,10 @@ const layoutMessage = (ctx, m, s, widthCache) => {
   runs.push({ text: m.message, color: s.textColor, bold: !!s.textBold });
 
   const bubble = s.bgMode === 'bubble';
-  const maxW = Math.max(10, s.boxW - s.padding * 2 - (bubble ? s.bubblePadX * 2 : 0));
+  const maxW = Math.max(10, s.boxW - s.padding * 2 - (bubble ? s.bubblePadLeft + s.bubblePadRight : 0));
+  // 캔버스는 글자마다 뒤에 letterSpacing을 붙여 그린다 → 폭 계산도 글자마다 더한다 (재는 동안은 0으로)
+  const ls = Number(s.letterSpacing) || 0;
+  ctx.letterSpacing = '0px';
   const charW = (ch, bold) => {
     const key = (bold ? 'b' : 'n') + ch;
     let w = widthCache.get(key);
@@ -125,7 +135,7 @@ const layoutMessage = (ctx, m, s, widthCache) => {
 
   // 글자 단위로 펼친 뒤, 폭을 넘으면 줄바꿈 (가능하면 마지막 공백에서)
   const chars = [];
-  for (const r of runs) for (const ch of Array.from(r.text)) chars.push({ ch, color: r.color, bold: r.bold, w: charW(ch, r.bold) });
+  for (const r of runs) for (const ch of Array.from(r.text)) chars.push({ ch, color: r.color, bold: r.bold, w: charW(ch, r.bold) + ls });
 
   const lines = [];
   let start = 0;
@@ -158,17 +168,18 @@ const layoutMessage = (ctx, m, s, widthCache) => {
   });
   const lineH = s.fontSize * s.lineHeight;
   if (!bubble) return { lines: merged, height: merged.length * lineH + s.messageGap };
-  // 말풍선 너비 = 가장 긴 줄(줄 끝 공백 제외) + 좌우 여백
+  // 말풍선 너비 = 가장 긴 줄(줄 끝 공백, 마지막 글자 뒤 글자 간격 제외) + 좌우 여백
   let textW = 0;
   for (const line of lines) {
     let end = line.length;
     while (end > 0 && line[end - 1].ch === ' ') end--;
     let w = 0;
     for (let k = 0; k < end; k++) w += line[k].w;
+    if (end > 0) w -= ls;
     textW = Math.max(textW, w);
   }
-  const bubbleH = merged.length * lineH + s.bubblePadY * 2;
-  return { lines: merged, bubbleW: Math.ceil(textW + s.bubblePadX * 2), bubbleH, height: bubbleH + s.bubbleGap };
+  const bubbleH = merged.length * lineH + s.bubblePadTop + s.bubblePadBottom;
+  return { lines: merged, bubbleW: Math.ceil(textW + s.bubblePadLeft + s.bubblePadRight), bubbleH, height: bubbleH + s.bubbleGap };
 };
 
 // 채팅 전체를 미리 줄바꿈/높이 계산해 둔다 (설정이 바뀌면 다시)
@@ -214,18 +225,35 @@ const roundRect = (ctx, x, y, w, h, r, newPath = true) => {
 };
 
 // 채팅 상자 하나를 그린다. 새 채팅은 아래에서 밀고 올라오고, 예전 채팅은 위로 사라진다.
+// 순서: 채팅 → 위쪽 페이드(채팅만 지움) → 상자 전체 배경을 맨 뒤에 깔기(destination-over)
 export const drawFrame = (ctx, items, t, s) => {
-  const { boxW: W, boxH: H, padding: P } = s;
-  const bubble = s.bgMode === 'bubble';
+  const { boxW: W, boxH: H } = s;
+  drawChats(ctx, items, t, s);
+  if (s.fadeTop && s.fadeTopHeight > 0) {
+    const fh = Math.min(H, s.fadeTopHeight);
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    const g = ctx.createLinearGradient(0, 0, 0, fh);
+    g.addColorStop(0, 'rgba(0, 0, 0, 1)');
+    g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, fh);
+    ctx.restore();
+  }
   if (s.bgMode === 'box' && s.bgOpacity > 0) {
     ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
     ctx.globalAlpha = s.bgOpacity;
     ctx.fillStyle = s.bgColor;
     roundRect(ctx, 0, 0, W, H, s.bgRadius);
     ctx.fill();
     ctx.restore();
   }
+};
 
+const drawChats = (ctx, items, t, s) => {
+  const { boxW: W, boxH: H, padding: P } = s;
+  const bubble = s.bgMode === 'bubble';
   const idx = lastIndexAt(items, t);
   if (idx < 0) return;
 
@@ -241,6 +269,7 @@ export const drawFrame = (ctx, items, t, s) => {
   ctx.textBaseline = 'alphabetic';
   ctx.lineJoin = 'round';
   ctx.miterLimit = 2;
+  ctx.letterSpacing = `${Number(s.letterSpacing) || 0}px`; // save/restore로 원래대로 돌아간다
 
   const lineH = s.fontSize * s.lineHeight;
   const baselineOffset = (lineH - s.fontSize) / 2 + s.fontSize * 0.86;
@@ -277,11 +306,11 @@ export const drawFrame = (ctx, items, t, s) => {
       ctx.restore();
     }
     ctx.globalAlpha = alpha;
-    const textTop = bubble ? top + s.bubblePadY : top;
+    const textTop = bubble ? top + s.bubblePadTop : top;
     for (let li = 0; li < it.lines.length; li++) {
       const y = textTop + li * lineH + baselineOffset;
       if (y < -lineH || y > H + lineH) continue;
-      let x = bubble ? P + s.bubblePadX : P;
+      let x = bubble ? P + s.bubblePadLeft : P;
       for (const run of it.lines[li]) {
         ctx.font = fontOf(s, run.bold);
         if (s.outlineWidth > 0) {
