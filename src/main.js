@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electro
 const path = require('path');
 const fs = require('fs');
 const { FORMAT_EXT } = require('./encoder');
+const { createEmojiStore, IMAGE_EXT } = require('./emojiStore');
 
 const smokeArg = process.argv.find((a) => a.startsWith('--smoke-test='));
 const SMOKE_OUT = smokeArg ? path.resolve(smokeArg.split('=')[1]) : null;
@@ -12,6 +13,11 @@ const smokeFmtArg = process.argv.find((a) => a.startsWith('--smoke-format='));
 const SMOKE_FORMAT = smokeFmtArg ? smokeFmtArg.split('=')[1] : '';
 const smokeOutputArg = process.argv.find((a) => a.startsWith('--smoke-output='));
 const SMOKE_OUTPUT = smokeOutputArg ? smokeOutputArg.split('=')[1] : 'full';
+// 예시 채팅 대신 실제 채팅 파일로 점검 (이모티콘 자동 받기까지): --smoke-chat=파일 --smoke-start=초
+const smokeChatArg = process.argv.find((a) => a.startsWith('--smoke-chat='));
+const SMOKE_CHAT = smokeChatArg ? path.resolve(smokeChatArg.slice('--smoke-chat='.length)) : '';
+const smokeStartArg = process.argv.find((a) => a.startsWith('--smoke-start='));
+const SMOKE_START = smokeStartArg ? Number(smokeStartArg.split('=')[1]) || 0 : 0;
 
 let win;
 
@@ -32,7 +38,7 @@ const createWindow = () => {
       backgroundThrottling: false, // 창이 뒤에 있어도 렌더링 속도 유지
     },
   });
-  win.loadFile(path.join(__dirname, 'ui', 'index.html'), SMOKE_OUT ? { query: { smoke: SMOKE_OUT, seconds: String(SMOKE_SECONDS), format: SMOKE_FORMAT, output: SMOKE_OUTPUT } } : undefined);
+  win.loadFile(path.join(__dirname, 'ui', 'index.html'), SMOKE_OUT ? { query: { smoke: SMOKE_OUT, seconds: String(SMOKE_SECONDS), format: SMOKE_FORMAT, output: SMOKE_OUTPUT, chat: SMOKE_CHAT ? '1' : '', start: String(SMOKE_START) } } : undefined);
 };
 
 app.whenReady().then(() => {
@@ -66,9 +72,46 @@ ipcMain.handle('choose-output', async (e, { format, defaultName }) => {
 });
 
 ipcMain.handle('reveal', (e, p) => shell.showItemInFolder(p));
+
+// ---------- 이모티콘 보관함 ----------
+let emojiStore;
+const emojis = () => (emojiStore ||= createEmojiStore(path.join(app.getPath('userData'), 'emojis')));
+ipcMain.handle('emoji-list', () => emojis().list());
+ipcMain.handle('emoji-read', (e, name) => emojis().read(name));
+ipcMain.handle('emoji-download', async (e, name, url) => {
+  try {
+    return { ok: true, entry: await emojis().download(name, url) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+ipcMain.handle('emoji-pick-file', async (e, name) => {
+  const r = await dialog.showOpenDialog(win, {
+    title: `「${name}」 이모티콘 이미지 고르기`,
+    filters: [{ name: '이미지', extensions: IMAGE_EXT.map((x) => x.slice(1)) }],
+    properties: ['openFile'],
+  });
+  if (r.canceled || !r.filePaths[0]) return null;
+  try {
+    return { ok: true, entry: emojis().addFile(name, r.filePaths[0]) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+ipcMain.handle('emoji-pick-folder', async () => {
+  const r = await dialog.showOpenDialog(win, { title: '이모티콘 폴더 고르기 (파일 이름 = 이모티콘 이름)', properties: ['openDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return null;
+  return emojis().addFolder(r.filePaths[0]);
+});
+ipcMain.handle('emoji-remove', (e, name) => emojis().remove(name));
+ipcMain.handle('emoji-open-dir', () => {
+  fs.mkdirSync(emojis().dir, { recursive: true });
+  return shell.openPath(emojis().dir);
+});
 ipcMain.on('set-fullscreen', (e, on) => win && win.setFullScreen(!!on));
 
 // 자동 점검 모드: 렌더링이 끝나면 결과를 출력하고 종료 (CI에서 exe가 실제로 영상을 만드는지 확인용)
+ipcMain.handle('smoke-chat-text', () => (SMOKE_CHAT ? fs.readFileSync(SMOKE_CHAT, 'utf8') : ''));
 ipcMain.on('smoke-done', (e, result) => {
   console.log('SMOKE_RESULT ' + JSON.stringify(result));
   app.exit(result && result.ok ? 0 : 1);

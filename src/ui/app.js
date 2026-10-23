@@ -1,5 +1,6 @@
 import { DEFAULT_SETTINGS, NICK_PALETTE, buildTimeline, prepare, drawFrame, frameKey, formatClock, parseClock } from './shared/renderer.js';
 import { parseChatText } from './shared/parse.js';
+import { createEmojiPanel } from './emoji.js';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'chattovideo:settings';
@@ -39,6 +40,10 @@ let speed = 1;
 let rendering = false;
 let cancelRequested = false;
 
+// 6. 이모티콘 칸. 이미지를 새로 불러오면 줄바꿈(이모티콘 폭)부터 다시 계산
+let emojiReady = Promise.resolve();
+const emoji = createEmojiPanel({ $, api: window.api, onChange: (layout) => (layout ? reprepare() : draw()) });
+
 // 채팅 상자 크기의 캔버스에 그린다 (미리보기와 영상 출력이 같은 그림을 쓴다)
 let boxCanvas = new OffscreenCanvas(s.boxW, s.boxH);
 let boxCtx = boxCanvas.getContext('2d', { willReadFrequently: true });
@@ -63,7 +68,7 @@ const reprepare = (immediate = false) => {
   const run = async () => {
     await fontReady();
     ensureBoxCanvas();
-    items = prepare(boxCtx, timeline, s);
+    items = prepare(boxCtx, timeline, s, emoji.lib);
     draw();
   };
   if (immediate) return run();
@@ -81,11 +86,13 @@ const setChats = (list, label) => {
     : '읽을 수 있는 채팅이 없어요. 형식을 확인해주세요.';
   $('rangeStart').value = formatClock(0);
   $('rangeEnd').value = formatClock(Math.ceil(duration) + 5);
+  // 쓰인 이모티콘 확인 → 보관함에서 불러오기 → 주소가 있으면 미등록분 자동으로 받기 (끝나면 다시 그림)
+  emojiReady = emoji.setChats(chats).catch((err) => ($('emojiSummary').textContent = `이모티콘 불러오기 오류: ${err.message}`));
   return reprepare(true);
 };
 
 // ---------- 설정 입력 ----------
-const LAYOUT_KEYS = new Set(['fontFamily', 'fontSize', 'lineHeight', 'messageGap', 'textColor', 'textBold', 'boxW', 'padding', 'nickMode', 'nickColor', 'nickBold', 'showDonation', 'donationColor', 'palette', 'bgMode', 'bubblePadLeft', 'bubblePadRight', 'bubblePadTop', 'bubblePadBottom', 'bubbleGap', 'letterSpacing']);
+const LAYOUT_KEYS = new Set(['fontFamily', 'fontSize', 'lineHeight', 'messageGap', 'textColor', 'textBold', 'boxW', 'padding', 'nickMode', 'nickColor', 'nickBold', 'showDonation', 'donationColor', 'palette', 'bgMode', 'bubblePadLeft', 'bubblePadRight', 'bubblePadTop', 'bubblePadBottom', 'bubbleGap', 'letterSpacing', 'emojiScale', 'emojiGap', 'emojiMissing']);
 
 const clampBox = () => {
   s.width = Math.max(16, Math.round(s.width / 2) * 2); // 영상 코덱은 짝수 크기가 필요
@@ -301,7 +308,7 @@ function draw() {
 
   ensureBoxCanvas();
   boxCtx.clearRect(0, 0, s.boxW, s.boxH);
-  drawFrame(boxCtx, items, t, s);
+  drawFrame(boxCtx, items, t, s, emoji.lib);
   pctx.imageSmoothingQuality = 'high';
   pctx.drawImage(boxCanvas, s.boxX * k, s.boxY * k, s.boxW * k, s.boxH * k);
 
@@ -560,7 +567,7 @@ const renderVideo = async ({ outPath, startSec, endSec, onProgress }) => {
           repeat = 0;
         }
         boxCtx.clearRect(0, 0, s.boxW, s.boxH);
-        drawFrame(boxCtx, items, ft, s);
+        drawFrame(boxCtx, items, ft, s, emoji.lib);
         const wait = window.api.encodeWrite(p, boxCtx.getImageData(0, 0, s.boxW, s.boxH).data);
         if (wait) await wait;
         prevKey = key;
@@ -670,9 +677,14 @@ if (smokeOut) {
       const fmtParam = new URLSearchParams(location.search).get('format');
       const outputParam = new URLSearchParams(location.search).get('output') || 'full';
       Object.assign(s, DEFAULT_SETTINGS, { outputMode: outputParam, format: fmtParam || (/\.mov$/i.test(smokeOut) ? 'mov-qtrle' : /\.mp4$/i.test(smokeOut) ? 'mp4-green' : 'webm') });
-      await setChats(sample, 'smoke');
-      const result = await renderVideo({ outPath: smokeOut, startSec: 0, endSec: seconds });
-      window.api.smokeDone({ ok: !!result && result.size > 0, ...result });
+      const q = new URLSearchParams(location.search);
+      const startSec = Number(q.get('start')) || 0;
+      if (q.get('chat')) {
+        await setChats(parseChatText(await window.api.smokeChatText()), 'smoke-chat');
+        await emojiReady;
+      } else await setChats(sample, 'smoke');
+      const result = await renderVideo({ outPath: smokeOut, startSec, endSec: startSec + seconds });
+      window.api.smokeDone({ ok: !!result && result.size > 0, ...result, emojis: emoji.lib.size, emojiAnimated: [...emoji.lib.values()].filter((e) => e.animated).length, emojiSummary: $('emojiSummary').textContent });
     } catch (err) {
       window.api.smokeDone({ ok: false, error: String(err && err.message ? err.message : err) });
     }

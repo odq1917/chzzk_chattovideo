@@ -31,6 +31,17 @@ h1 span { font-size: 11px; color: var(--muted); font-weight: normal; }
 h2 { font-size: 13px; margin: 0 0 8px; }
 section { border-bottom: 1px solid var(--line); padding: 12px 0; }
 section:last-child { border-bottom: none; }
+/* 이모티콘 목록 */
+.emojiList { max-height: 260px; overflow-y: auto; margin: 6px 0; border: 1px solid var(--line); border-radius: 6px; }
+.emojiList:empty { display: none; }
+.emojiRow { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.emojiRow:last-child { border-bottom: none; }
+.emojiRow img, .emojiMiss { width: 28px; height: 28px; object-fit: contain; flex: none; }
+.emojiMiss { display: inline-flex; align-items: center; justify-content: center; background: #fff4d6; border-radius: 4px; }
+.emojiName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; }
+.emojiCount { color: var(--muted); flex: none; }
+.emojiState { flex: none; font-size: 11px; color: var(--muted); }
+.emojiState.miss { color: #b45309; font-weight: bold; }
 /* 왼쪽 단계 접기/펴기: 제목만 남긴다 */
 .panel > section > h2 { cursor: pointer; user-select: none; }
 .panel > section > h2::before { content: '▾'; display: inline-block; width: 14px; color: var(--muted); }
