@@ -1,0 +1,59 @@
+name: Build Windows exe
+
+# v로 시작하는 태그(예: v0.1.0)를 올리면 exe를 만들어 GitHub Release에 올린다.
+# Actions 탭에서 수동 실행(workflow_dispatch)하면 Release 없이 exe만 Artifacts로 받을 수 있다.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Smoke test (source) - 실제로 영상이 만들어지는지
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          npx electron . --smoke-test=smoke-src.webm --smoke-seconds=20
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path smoke-src.webm)) { throw "source smoke test failed" }
+          Get-Item smoke-src.webm | Select-Object Name, Length
+
+      - name: Build exe
+        run: npm run dist
+
+      - name: Smoke test (packaged exe) - ffmpeg가 exe 안에서 실행되는지
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          foreach ($f in @('webm', 'mov-prores')) {
+            $ext = if ($f -eq 'webm') { 'webm' } else { 'mov' }
+            $out = Join-Path $PWD "smoke-packed-$f.$ext"
+            $p = Start-Process -FilePath "dist\win-unpacked\ChzzkChatToVideo.exe" -ArgumentList "--smoke-test=$out", "--smoke-format=$f", "--smoke-seconds=10" -Wait -PassThru
+            if ($p.ExitCode -ne 0 -or !(Test-Path $out)) { throw "packaged smoke test failed: $f (exit $($p.ExitCode))" }
+            Get-Item $out | Select-Object Name, Length
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChzzkChatToVideo-windows
+          path: dist/*.exe
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe
+          generate_release_notes: true

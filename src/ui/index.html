@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>치지직 채팅 영상 만들기</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <aside class="panel">
+      <h1>치지직 채팅 영상 만들기 <span id="version"></span></h1>
+
+      <section>
+        <h2>1. 채팅 불러오기</h2>
+        <p class="hint">채팅 추출기에서 저장한 CSV 파일, 또는 「클립보드 복사」한 내용을 넣으세요.</p>
+        <div class="row">
+          <button id="openFile">파일 열기</button>
+          <button id="togglePaste" class="ghost">붙여넣기</button>
+        </div>
+        <div id="pasteBox" hidden>
+          <textarea id="pasteText" rows="5" placeholder="[00:10:05] <닉네임> 채팅 내용"></textarea>
+          <button id="applyPaste">적용</button>
+        </div>
+        <p id="chatInfo" class="info">불러온 채팅 없음</p>
+      </section>
+
+      <section>
+        <h2>2. 화면</h2>
+        <div class="grid2">
+          <label>영상 너비 <input type="number" data-key="width" min="16" step="2" /></label>
+          <label>영상 높이 <input type="number" data-key="height" min="16" step="2" /></label>
+          <label>채팅 X <input type="number" data-key="boxX" min="0" /></label>
+          <label>채팅 Y <input type="number" data-key="boxY" min="0" /></label>
+          <label>채팅 너비 <input type="number" data-key="boxW" min="40" /></label>
+          <label>채팅 높이 <input type="number" data-key="boxH" min="40" /></label>
+        </div>
+        <div class="row presets">
+          <button data-preset="right">오른쪽</button>
+          <button data-preset="left">왼쪽</button>
+          <button data-preset="bottom-left">왼쪽 아래</button>
+          <button data-preset="full">전체</button>
+        </div>
+        <p class="hint">미리보기에서 채팅 상자를 끌어 옮기고, 오른쪽 아래 모서리를 끌어 크기를 바꿀 수 있어요.</p>
+      </section>
+
+      <section>
+        <h2>3. 글자</h2>
+        <label>글꼴 <input type="text" data-key="fontFamily" list="fontList" /></label>
+        <datalist id="fontList"></datalist>
+        <div class="grid2">
+          <label>글자 크기 <input type="number" data-key="fontSize" min="8" max="200" /></label>
+          <label>줄 높이 배수 <input type="number" data-key="lineHeight" min="1" max="3" step="0.05" /></label>
+          <label>채팅 사이 간격 <input type="number" data-key="messageGap" min="0" max="100" /></label>
+          <label>글자 색 <input type="color" data-key="textColor" /></label>
+          <label>외곽선 두께 <input type="number" data-key="outlineWidth" min="0" max="20" step="0.5" /></label>
+          <label>외곽선 색 <input type="color" data-key="outlineColor" /></label>
+        </div>
+      </section>
+
+      <section>
+        <h2>4. 닉네임</h2>
+        <div class="radio">
+          <label><input type="radio" name="nickMode" value="palette" /> 팔레트에서 닉네임별 자동 배정</label>
+          <label><input type="radio" name="nickMode" value="single" /> 한 가지 색으로 통일</label>
+          <label><input type="radio" name="nickMode" value="hidden" /> 닉네임 표시 안 함</label>
+        </div>
+        <div id="singleColorRow" class="grid2">
+          <label>닉네임 색 <input type="color" data-key="nickColor" /></label>
+        </div>
+        <div id="paletteRow">
+          <p class="hint">팔레트 (각 칸을 눌러 색을 바꿀 수 있어요. 같은 닉네임은 항상 같은 색)</p>
+          <div id="palette" class="palette"></div>
+          <button id="resetPalette" class="ghost small">기본 팔레트로</button>
+        </div>
+        <label class="check"><input type="checkbox" data-key="nickBold" /> 닉네임 굵게</label>
+      </section>
+
+      <section>
+        <h2>5. 배경 상자</h2>
+        <div class="grid2">
+          <label>색 <input type="color" data-key="bgColor" /></label>
+          <label>투명도 <input type="range" data-key="bgOpacity" min="0" max="1" step="0.05" /></label>
+          <label>모서리 둥글기 <input type="number" data-key="bgRadius" min="0" max="200" /></label>
+          <label>안쪽 여백 <input type="number" data-key="padding" min="0" max="200" /></label>
+        </div>
+      </section>
+
+      <section>
+        <h2>6. 연출</h2>
+        <div class="grid2">
+          <label>스크롤 시간(초) <input type="number" data-key="scrollDuration" min="0.01" max="2" step="0.01" /></label>
+          <label>후원 라벨 색 <input type="color" data-key="donationColor" /></label>
+        </div>
+        <label class="check"><input type="checkbox" data-key="fadeIn" /> 새 채팅 서서히 나타나기</label>
+        <label class="check"><input type="checkbox" data-key="showDonation" /> 후원 라벨 표시 (파일에 후원 정보가 있을 때)</label>
+        <p class="hint">같은 1초에 올라온 채팅은 그 1초를 개수만큼 나눠 차례로 올라와요.</p>
+      </section>
+    </aside>
+
+    <main class="stage">
+      <div id="previewWrap" class="previewWrap">
+        <canvas id="preview"></canvas>
+      </div>
+
+      <div class="controls">
+        <button id="play" class="icon">▶</button>
+        <span id="clock" class="clock">00:00:00</span>
+        <input id="seek" type="range" min="0" max="100" step="0.01" value="0" />
+        <select id="speed">
+          <option value="1">1배속</option>
+          <option value="2">2배속</option>
+          <option value="5">5배속</option>
+          <option value="20">20배속</option>
+        </select>
+        <select id="previewBg">
+          <option value="checker">투명(체크무늬)</option>
+          <option value="dark">어두운 배경</option>
+          <option value="light">밝은 배경</option>
+        </select>
+      </div>
+
+      <section class="renderPanel">
+        <h2>7. 영상 만들기</h2>
+        <div class="renderRow">
+          <label>시작 <input type="text" id="rangeStart" placeholder="00:00:00" /></label>
+          <label>끝 <input type="text" id="rangeEnd" placeholder="끝까지" /></label>
+          <label>FPS
+            <select data-key="fps">
+              <option value="24">24</option>
+              <option value="30">30</option>
+              <option value="60">60</option>
+            </select>
+          </label>
+          <label>형식
+            <select data-key="format">
+              <option value="webm">투명 WebM (VP9) — 가장 작음</option>
+              <option value="mov-qtrle">투명 MOV (QuickTime Animation)</option>
+              <option value="mov-prores">투명 MOV (ProRes 4444) — 프리미어 호환 확실, 큼</option>
+              <option value="mp4-green">그린스크린 MP4</option>
+            </select>
+          </label>
+          <label>출력 크기
+            <select data-key="outputMode">
+              <option value="full">영상 전체 크기 (위치 그대로)</option>
+              <option value="box">채팅 상자만 (더 빠르고 작음)</option>
+            </select>
+          </label>
+          <label id="greenRow">그린 색 <input type="color" data-key="greenColor" /></label>
+        </div>
+        <div class="renderRow">
+          <button id="render" class="primary">영상 만들기</button>
+          <button id="cancel" class="ghost" hidden>취소</button>
+          <div id="progress" class="progress" hidden><div id="bar"></div></div>
+        </div>
+        <p id="renderInfo" class="info"></p>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
