@@ -1,7 +1,7 @@
 {
   "name": "chzzk-chattovideo",
   "productName": "ChzzkChatToVideo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "치지직/SOOP 채팅 내역을 생방송 채팅처럼 올라가는 투명 배경 영상으로 만드는 프로그램",
   "main": "src/main.js",
   "author": "odq1917",

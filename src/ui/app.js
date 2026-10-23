@@ -3,7 +3,7 @@ import { parseChatText } from './shared/parse.js';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'chattovideo:settings';
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 $('version').textContent = `v${VERSION}`;
 
 // ---------- 상태 ----------
@@ -194,7 +194,10 @@ window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', async (e) => {
   e.preventDefault();
   const file = e.dataTransfer.files[0];
-  if (file) setChats(parseChatText(await file.text()), file.name);
+  if (!file) return;
+  // 이미지/영상이면 참고 화면으로, 아니면 채팅 파일로
+  if (/^(image|video)\//.test(file.type)) loadRef(file);
+  else setChats(parseChatText(await file.text()), file.name);
 });
 
 // ---------- 미리보기 ----------
@@ -202,11 +205,24 @@ const preview = $('preview');
 const pctx = preview.getContext('2d');
 let scale = 1;
 
+let bigView = false;
+const isBigView = () => bigView;
+
+// scale: 영상 1픽셀이 화면에서 차지하는 CSS 픽셀. 캔버스는 기기 픽셀 단위로 선명하게 그린다
 const resizePreview = () => {
   const wrap = $('previewWrap');
-  scale = Math.min((wrap.clientWidth - 16) / s.width, (wrap.clientHeight - 16) / s.height);
-  preview.width = Math.max(1, Math.round(s.width * scale));
-  preview.height = Math.max(1, Math.round(s.height * scale));
+  const dpr = window.devicePixelRatio || 1;
+  const zoom = $('zoom').value;
+  const pad = isBigView() ? 0 : 16;
+  const fit = Math.min((wrap.clientWidth - pad) / s.width, (wrap.clientHeight - pad) / s.height);
+  // '실제 크기'는 영상 1픽셀 = 모니터 1픽셀
+  scale = zoom === 'fit' ? fit : Number(zoom) / dpr;
+  const cssW = Math.max(1, Math.round(s.width * scale));
+  const cssH = Math.max(1, Math.round(s.height * scale));
+  preview.style.width = `${cssW}px`;
+  preview.style.height = `${cssH}px`;
+  preview.width = Math.round(cssW * dpr);
+  preview.height = Math.round(cssH * dpr);
   draw();
 };
 new ResizeObserver(resizePreview).observe($('previewWrap'));
@@ -225,30 +241,157 @@ const checker = (() => {
 
 function draw() {
   if (rendering) return;
+  const k = preview.width / s.width; // 캔버스 픽셀 / 영상 픽셀
+  const dpr = window.devicePixelRatio || 1;
   const bg = $('previewBg').value;
   pctx.clearRect(0, 0, preview.width, preview.height);
-  pctx.fillStyle = bg === 'checker' ? pctx.createPattern(checker, 'repeat') : bg === 'dark' ? '#1b1d21' : '#f5f5f5';
+  pctx.fillStyle = bg === 'checker' ? pctx.createPattern(checker, 'repeat') : bg === 'light' ? '#f5f5f5' : '#1b1d21';
   pctx.fillRect(0, 0, preview.width, preview.height);
+  if (bg === 'ref') drawRef();
 
   ensureBoxCanvas();
   boxCtx.clearRect(0, 0, s.boxW, s.boxH);
   drawFrame(boxCtx, items, t, s);
-  pctx.drawImage(boxCanvas, s.boxX * scale, s.boxY * scale, s.boxW * scale, s.boxH * scale);
+  pctx.imageSmoothingQuality = 'high';
+  pctx.drawImage(boxCanvas, s.boxX * k, s.boxY * k, s.boxW * k, s.boxH * k);
 
-  // 채팅 상자 테두리와 크기 조절 손잡이
-  pctx.save();
-  pctx.setLineDash([5, 4]);
-  pctx.strokeStyle = 'rgba(0, 195, 137, 0.9)';
-  pctx.strokeRect(s.boxX * scale + 0.5, s.boxY * scale + 0.5, s.boxW * scale - 1, s.boxH * scale - 1);
-  pctx.setLineDash([]);
-  pctx.fillStyle = '#00c389';
-  pctx.fillRect((s.boxX + s.boxW) * scale - 9, (s.boxY + s.boxH) * scale - 9, 9, 9);
-  pctx.restore();
+  // 채팅 상자 테두리와 크기 조절 손잡이 (크게 보기에서는 실제 모습만)
+  if (!isBigView()) {
+    pctx.save();
+    pctx.setLineDash([5 * dpr, 4 * dpr]);
+    pctx.lineWidth = dpr;
+    pctx.strokeStyle = 'rgba(0, 195, 137, 0.9)';
+    pctx.strokeRect(s.boxX * k + 0.5, s.boxY * k + 0.5, s.boxW * k - 1, s.boxH * k - 1);
+    pctx.setLineDash([]);
+    pctx.fillStyle = '#00c389';
+    pctx.fillRect((s.boxX + s.boxW) * k - 9 * dpr, (s.boxY + s.boxH) * k - 9 * dpr, 9 * dpr, 9 * dpr);
+    pctx.restore();
+  }
 
   $('clock').textContent = formatClock(t);
   $('seek').value = String(t);
 }
-$('previewBg').addEventListener('change', draw);
+$('previewBg').addEventListener('change', () => {
+  if ($('previewBg').value === 'ref' && !ref) $('refFile').click();
+  syncRefVideo();
+  draw();
+});
+// 확대하면 채팅 상자가 화면 가운데 오도록 스크롤
+$('zoom').addEventListener('change', () => {
+  resizePreview();
+  const wrap = $('previewWrap');
+  wrap.scrollLeft = preview.offsetLeft + (s.boxX + s.boxW / 2) * scale - wrap.clientWidth / 2;
+  wrap.scrollTop = preview.offsetTop + (s.boxY + s.boxH / 2) * scale - wrap.clientHeight / 2;
+});
+
+// ---------- 참고 화면 (미리보기 전용 — 결과 영상에는 들어가지 않는다) ----------
+let ref = null; // { kind: 'image' | 'video', el, url }
+const refOffset = () => parseClock($('refOffset').value) ?? 0;
+
+// 영상 전체 크기에 맞춰 비율 유지로 깐다 (편집 프로그램의 '프레임 크기에 맞춤'처럼)
+function drawRef() {
+  if (!ref) return;
+  const el = ref.el;
+  const w = ref.kind === 'video' ? el.videoWidth : el.naturalWidth;
+  const h = ref.kind === 'video' ? el.videoHeight : el.naturalHeight;
+  if (!w || !h) return;
+  const fit = Math.min(preview.width / w, preview.height / h);
+  const dw = w * fit;
+  const dh = h * fit;
+  pctx.fillStyle = '#000';
+  pctx.fillRect(0, 0, preview.width, preview.height);
+  pctx.drawImage(el, (preview.width - dw) / 2, (preview.height - dh) / 2, dw, dh);
+}
+
+// 참고 영상을 채팅 시계에 맞춘다 (영상 0초 = 채팅 refOffset)
+function syncRefVideo(force = false) {
+  if (!ref || ref.kind !== 'video') return;
+  const v = ref.el;
+  const showing = $('previewBg').value === 'ref';
+  const target = Math.max(0, t - refOffset());
+  if (!showing || !playing || target >= (v.duration || Infinity)) {
+    v.pause();
+    if (showing && (force || Math.abs(v.currentTime - target) > 0.05)) v.currentTime = Math.min(target, v.duration || target);
+    return;
+  }
+  v.playbackRate = Math.min(speed, 16);
+  if (force || Math.abs(v.currentTime - target) > 0.5) v.currentTime = target;
+  if (v.paused) v.play().catch(() => {});
+}
+
+function loadRef(file) {
+  clearRef();
+  const url = URL.createObjectURL(file);
+  if (file.type.startsWith('video/')) {
+    const v = document.createElement('video');
+    v.muted = true;
+    v.preload = 'auto';
+    v.addEventListener('loadeddata', () => {
+      syncRefVideo(true);
+      draw();
+    });
+    v.addEventListener('seeked', draw);
+    v.addEventListener('error', () => ($('refName').textContent = `${file.name} — 이 영상은 열 수 없어요 (MP4/WebM 권장)`));
+    v.src = url;
+    ref = { kind: 'video', el: v, url };
+  } else {
+    const img = new Image();
+    img.onload = draw;
+    img.src = url;
+    ref = { kind: 'image', el: img, url };
+  }
+  $('refName').textContent = file.name;
+  $('refOffsetRow').hidden = ref.kind !== 'video';
+  $('refClear').hidden = false;
+  $('previewBg').value = 'ref';
+  draw();
+}
+
+function clearRef() {
+  if (!ref) return;
+  if (ref.kind === 'video') ref.el.pause();
+  URL.revokeObjectURL(ref.url);
+  ref = null;
+  $('refName').textContent = '참고 화면 없음';
+  $('refOffsetRow').hidden = true;
+  $('refClear').hidden = true;
+  if ($('previewBg').value === 'ref') $('previewBg').value = 'checker';
+  draw();
+}
+
+$('refOpen').addEventListener('click', () => $('refFile').click());
+$('refFile').addEventListener('change', () => {
+  const file = $('refFile').files[0];
+  if (file) loadRef(file);
+  $('refFile').value = '';
+});
+$('refClear').addEventListener('click', clearRef);
+$('refOffset').addEventListener('change', () => syncRefVideo(true));
+
+// ---------- 크게 보기 ----------
+// 미리보기가 창 전체를 덮고, 창도 전체 화면으로 (영상 1픽셀 ≈ 모니터 1픽셀에 가깝게 체감)
+const setBigView = (on) => {
+  if (on === bigView || rendering) return;
+  bigView = on;
+  document.body.classList.toggle('big', on);
+  window.api.setFullScreen(on);
+  resizePreview();
+};
+$('bigView').addEventListener('click', () => setBigView(true));
+preview.addEventListener('dblclick', () => setBigView(!bigView));
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && bigView) return setBigView(false);
+  if (rendering || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    setPlaying(!playing);
+  } else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+    e.preventDefault();
+    t = Math.max(0, Math.min(duration + 5, t + (e.code === 'ArrowLeft' ? -5 : 5)));
+    syncRefVideo(true);
+    draw();
+  }
+});
 
 // 상자 끌어서 옮기기 / 모서리 끌어서 크기 바꾸기
 let drag = null;
@@ -297,6 +440,7 @@ const tick = (ts) => {
   const dt = lastTs ? (ts - lastTs) / 1000 : 0;
   lastTs = ts;
   t = Math.min(t + dt * speed, duration + 5);
+  syncRefVideo();
   draw();
   if (t >= duration + 5) setPlaying(false);
   else requestAnimationFrame(tick);
@@ -308,13 +452,18 @@ const setPlaying = (on) => {
     lastTs = 0;
     requestAnimationFrame(tick);
   }
+  syncRefVideo(true);
 };
 $('play').addEventListener('click', () => setPlaying(!playing));
 $('seek').addEventListener('input', () => {
   t = Number($('seek').value);
+  syncRefVideo(true);
   draw();
 });
-$('speed').addEventListener('change', () => (speed = Number($('speed').value)));
+$('speed').addEventListener('change', () => {
+  speed = Number($('speed').value);
+  syncRefVideo();
+});
 
 // ---------- 영상 만들기 ----------
 const setRenderUi = (on) => {
@@ -332,49 +481,67 @@ const renderVideo = async ({ outPath, startSec, endSec, onProgress }) => {
   await reprepare(true);
   const fps = Number(s.fps) || 30;
   const total = Math.max(1, Math.round((endSec - startSec) * fps));
-  await window.api.renderStart({ ...s, fps, outPath });
-  let prevKey;
-  let repeat = 0;
+  const parts = window.api.encodePartCount(s.format, total, fps);
+  await window.api.encodeStart({ ...s, fps, outPath }, parts);
   const began = performance.now();
+  let done = 0;
   let lastReport = 0;
-  try {
-    for (let f = 0; f < total; f++) {
-      if (cancelRequested) break;
+  let lastYield = performance.now();
+
+  // 구간 하나를 그려서 자기 ffmpeg에 넘긴다. 여러 구간이 번갈아 진행된다
+  // (한 구간이 인코더를 기다리는 동안 다른 구간이 그린다. 캔버스는 하나를 같이 쓰지만 그리기~픽셀 읽기는 끊기지 않는다)
+  const runPart = async (p) => {
+    const from = Math.floor((total * p) / parts);
+    const to = Math.floor((total * (p + 1)) / parts);
+    let prevKey;
+    let repeat = 0;
+    for (let f = from; f < to; f++) {
+      if (cancelRequested) return;
       const ft = startSec + f / fps;
       const key = frameKey(items, ft, s);
-      if (f > 0 && key !== null && key === prevKey) {
-        repeat++;
-        if (repeat >= 600) {
-          await window.api.renderRepeat(repeat);
+      if (f > from && key !== null && key === prevKey) {
+        if (++repeat >= 600) {
+          await window.api.encodeRepeat(p, repeat);
           repeat = 0;
         }
       } else {
         if (repeat) {
-          await window.api.renderRepeat(repeat);
+          await window.api.encodeRepeat(p, repeat);
           repeat = 0;
         }
         boxCtx.clearRect(0, 0, s.boxW, s.boxH);
         drawFrame(boxCtx, items, ft, s);
-        const data = boxCtx.getImageData(0, 0, s.boxW, s.boxH).data;
-        await window.api.renderFrame(data.buffer);
+        const wait = window.api.encodeWrite(p, boxCtx.getImageData(0, 0, s.boxW, s.boxH).data);
+        if (wait) await wait;
         prevKey = key;
       }
+      done++;
       const now = performance.now();
       if (onProgress && now - lastReport > 250) {
         lastReport = now;
-        onProgress(f + 1, total, (f + 1) / ((now - began) / 1000));
+        onProgress(done, total, done / ((now - began) / 1000));
+      }
+      // 인코더가 계속 받아주면 기다릴 일이 없으니, 화면(진행률·취소 버튼)이 멈추지 않게 가끔 양보한다
+      if (now - lastYield > 100) {
+        await new Promise((r) => setTimeout(r, 0));
+        lastYield = performance.now();
       }
     }
-    if (repeat && !cancelRequested) await window.api.renderRepeat(repeat);
+    if (repeat && !cancelRequested) await window.api.encodeRepeat(p, repeat);
+  };
+
+  try {
+    await Promise.all(Array.from({ length: parts }, (_, p) => runPart(p)));
   } catch (err) {
-    await window.api.renderCancel();
+    cancelRequested = true;
+    await window.api.encodeCancel();
     throw err;
   }
   if (cancelRequested) {
-    await window.api.renderCancel();
+    await window.api.encodeCancel();
     return null;
   }
-  const result = await window.api.renderFinish();
+  const result = await window.api.encodeFinish();
   return { ...result, frames: total, seconds: (performance.now() - began) / 1000 };
 };
 

@@ -70,13 +70,26 @@ button.small { padding: 3px 8px; font-size: 11px; }
   flex: 1;
   min-height: 300px;
   display: flex;
-  align-items: center;
-  justify-content: center;
   background: #2b2d31;
   border-radius: 8px;
-  overflow: hidden;
+  overflow: auto;
 }
-#preview { display: block; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15); }
+/* margin:auto — 작으면 가운데, 확대해서 커지면 스크롤 */
+#preview { display: block; margin: auto; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15); }
+.previewWrap { position: relative; }
+body.big .previewWrap { position: fixed; inset: 0; z-index: 100; border-radius: 0; background: #000; overflow: hidden; min-height: 0; }
+body.big #preview { box-shadow: none; }
+.bigHint { display: none; }
+body.big .bigHint {
+  display: block; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  padding: 8px 14px; border-radius: 6px; background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 13px;
+  pointer-events: none; animation: hintFade 3.5s forwards;
+}
+@keyframes hintFade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+.refRow { padding: 6px 12px; flex-wrap: wrap; }
+.refName { flex: 1; min-width: 200px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+label.inline { flex-direction: row; align-items: center; gap: 6px; white-space: nowrap; }
+label.inline input { width: 90px; }
 .controls { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
 .controls input[type='range'] { flex: 1; }
 .clock { font-variant-numeric: tabular-nums; min-width: 64px; }
