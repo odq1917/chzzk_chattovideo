@@ -1,11 +1,17 @@
 name: Build Windows exe
 
 # v로 시작하는 태그(예: v0.1.0)를 올리면 exe를 만들어 GitHub Release에 올린다.
-# Actions 탭에서 수동 실행(workflow_dispatch)하면 Release 없이 exe만 Artifacts로 받을 수 있다.
+# Actions 탭에서 수동 실행(workflow_dispatch)할 때 release를 켜면 package.json 버전으로 태그(v x.y.z)를 만들어 Release에 올리고,
+# 끄면 exe만 Artifacts로 받을 수 있다.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'package.json 버전으로 Release 만들기'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -51,9 +57,19 @@ jobs:
           name: ChzzkChatToVideo-windows
           path: dist/*.exe
 
+      - name: Release tag
+        id: tag
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}".StartsWith('refs/tags/')) { $t = "${{ github.ref_name }}" }
+          else { $t = 'v' + (Get-Content package.json -Raw | ConvertFrom-Json).version }
+          "name=$t" >> $env:GITHUB_OUTPUT
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          target_commitish: ${{ github.sha }}
           files: dist/*.exe
           generate_release_notes: true
