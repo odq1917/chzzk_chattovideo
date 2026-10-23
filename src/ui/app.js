@@ -3,13 +3,16 @@ import { parseChatText } from './shared/parse.js';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'chattovideo:settings';
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 $('version').textContent = `v${VERSION}`;
 
 // ---------- 상태 ----------
 const loadSettings = () => {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') };
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    // v0.2.0까지 저장된 설정: 배경 모양이 없었다. 상자 배경을 켜 두고 쓰던 사람은 상자 모드로 이어서
+    if (saved.bgMode === undefined && saved.bgOpacity > 0) saved.bgMode = 'box';
+    return { ...DEFAULT_SETTINGS, ...saved };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -77,7 +80,7 @@ const setChats = (list, label) => {
 };
 
 // ---------- 설정 입력 ----------
-const LAYOUT_KEYS = new Set(['fontFamily', 'fontSize', 'lineHeight', 'messageGap', 'textColor', 'boxW', 'padding', 'nickMode', 'nickColor', 'nickBold', 'showDonation', 'donationColor', 'palette']);
+const LAYOUT_KEYS = new Set(['fontFamily', 'fontSize', 'lineHeight', 'messageGap', 'textColor', 'textBold', 'boxW', 'padding', 'nickMode', 'nickColor', 'nickBold', 'showDonation', 'donationColor', 'palette', 'bgMode', 'bubblePadX', 'bubblePadY', 'bubbleGap']);
 
 const clampBox = () => {
   s.width = Math.max(16, Math.round(s.width / 2) * 2); // 영상 코덱은 짝수 크기가 필요
@@ -98,6 +101,10 @@ const syncInputs = () => {
   $('singleColorRow').hidden = s.nickMode !== 'single';
   $('paletteRow').hidden = s.nickMode !== 'palette';
   $('greenRow').hidden = s.format !== 'mp4-green';
+  const bubble = s.bgMode === 'bubble';
+  for (const id of ['bubbleRows', 'bubbleShadowRow', 'bubbleHint']) $(id).hidden = !bubble;
+  $('boxBgRows').hidden = s.bgMode !== 'box';
+  $('messageGapRow').hidden = bubble; // 말풍선 모드에서는 「말풍선 사이 간격」을 쓴다
   renderPalette();
 };
 
@@ -105,7 +112,7 @@ const onSettingChanged = (key) => {
   clampBox();
   saveSettings();
   if (['width', 'height', 'boxX', 'boxY', 'boxW', 'boxH'].includes(key)) syncInputs();
-  if (key === 'format' || key === 'nickMode') syncInputs();
+  if (key === 'format' || key === 'nickMode' || key === 'bgMode') syncInputs();
   if (LAYOUT_KEYS.has(key)) reprepare();
   else {
     ensureBoxCanvas();

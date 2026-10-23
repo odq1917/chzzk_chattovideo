@@ -45,6 +45,7 @@ input[type='number'], input[type='text'], select, textarea {
 textarea { width: 100%; resize: vertical; margin: 6px 0; }
 input[type='color'] { width: 100%; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
 .grid2 input, .grid2 select, .panel > section > label > input { width: 100%; min-width: 0; }
+.panel > section > label.check > input { width: auto; flex: none; } /* 체크박스가 폭 100%로 늘어나 글자가 밀리던 것 */
 .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 6px; }
 .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
 button {
