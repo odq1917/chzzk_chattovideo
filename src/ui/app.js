@@ -1,0 +1,463 @@
+import { DEFAULT_SETTINGS, NICK_PALETTE, buildTimeline, prepare, drawFrame, frameKey, formatClock, parseClock } from './shared/renderer.js';
+import { parseChatText } from './shared/parse.js';
+
+const $ = (id) => document.getElementById(id);
+const STORAGE_KEY = 'chattovideo:settings';
+const VERSION = '0.1.0';
+$('version').textContent = `v${VERSION}`;
+
+// ---------- 상태 ----------
+const loadSettings = () => {
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+};
+const s = loadSettings();
+const saveSettings = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  } catch {}
+};
+
+let chats = [];
+let timeline = [];
+let items = [];
+let duration = 0; // 마지막 채팅 시각(초)
+let t = 0;
+let playing = false;
+let speed = 1;
+let rendering = false;
+let cancelRequested = false;
+
+// 채팅 상자 크기의 캔버스에 그린다 (미리보기와 영상 출력이 같은 그림을 쓴다)
+let boxCanvas = new OffscreenCanvas(s.boxW, s.boxH);
+let boxCtx = boxCanvas.getContext('2d', { willReadFrequently: true });
+const ensureBoxCanvas = () => {
+  if (boxCanvas.width !== s.boxW || boxCanvas.height !== s.boxH) {
+    boxCanvas = new OffscreenCanvas(s.boxW, s.boxH);
+    boxCtx = boxCanvas.getContext('2d', { willReadFrequently: true });
+  }
+};
+
+const fontReady = async () => {
+  try {
+    await document.fonts.load(`${s.fontSize}px "${s.fontFamily}"`, '가A');
+    await document.fonts.load(`bold ${s.fontSize}px "${s.fontFamily}"`, '가A');
+  } catch {}
+};
+
+// 줄바꿈/높이 계산은 글꼴·크기·상자 폭 등이 바뀔 때만 다시
+let prepareTimer = null;
+const reprepare = (immediate = false) => {
+  clearTimeout(prepareTimer);
+  const run = async () => {
+    await fontReady();
+    ensureBoxCanvas();
+    items = prepare(boxCtx, timeline, s);
+    draw();
+  };
+  if (immediate) return run();
+  prepareTimer = setTimeout(run, 120);
+};
+
+const setChats = (list, label) => {
+  chats = list;
+  timeline = buildTimeline(chats);
+  duration = timeline.length ? timeline[timeline.length - 1].t : 0;
+  $('seek').max = String(Math.max(1, duration + 5));
+  t = 0;
+  $('chatInfo').textContent = chats.length
+    ? `${label ? label + ' · ' : ''}채팅 ${chats.length.toLocaleString()}개 · 길이 ${formatClock(duration)}`
+    : '읽을 수 있는 채팅이 없어요. 형식을 확인해주세요.';
+  $('rangeStart').value = formatClock(0);
+  $('rangeEnd').value = formatClock(Math.ceil(duration) + 5);
+  return reprepare(true);
+};
+
+// ---------- 설정 입력 ----------
+const LAYOUT_KEYS = new Set(['fontFamily', 'fontSize', 'lineHeight', 'messageGap', 'textColor', 'boxW', 'padding', 'nickMode', 'nickColor', 'nickBold', 'showDonation', 'donationColor', 'palette']);
+
+const clampBox = () => {
+  s.width = Math.max(16, Math.round(s.width / 2) * 2); // 영상 코덱은 짝수 크기가 필요
+  s.height = Math.max(16, Math.round(s.height / 2) * 2);
+  s.boxW = Math.max(40, Math.min(Math.round(s.boxW / 2) * 2, s.width));
+  s.boxH = Math.max(40, Math.min(Math.round(s.boxH / 2) * 2, s.height));
+  s.boxX = Math.max(0, Math.min(Math.round(s.boxX), s.width - s.boxW));
+  s.boxY = Math.max(0, Math.min(Math.round(s.boxY), s.height - s.boxH));
+};
+
+const syncInputs = () => {
+  for (const el of document.querySelectorAll('[data-key]')) {
+    const v = s[el.dataset.key];
+    if (el.type === 'checkbox') el.checked = !!v;
+    else el.value = v ?? '';
+  }
+  for (const r of document.querySelectorAll('input[name="nickMode"]')) r.checked = r.value === s.nickMode;
+  $('singleColorRow').hidden = s.nickMode !== 'single';
+  $('paletteRow').hidden = s.nickMode !== 'palette';
+  $('greenRow').hidden = s.format !== 'mp4-green';
+  renderPalette();
+};
+
+const onSettingChanged = (key) => {
+  clampBox();
+  saveSettings();
+  if (['width', 'height', 'boxX', 'boxY', 'boxW', 'boxH'].includes(key)) syncInputs();
+  if (key === 'format' || key === 'nickMode') syncInputs();
+  if (LAYOUT_KEYS.has(key)) reprepare();
+  else {
+    ensureBoxCanvas();
+    if (key === 'boxH') reprepare();
+    resizePreview();
+    draw();
+  }
+};
+
+for (const el of document.querySelectorAll('[data-key]')) {
+  el.addEventListener(el.type === 'range' || el.type === 'color' ? 'input' : 'change', () => {
+    const key = el.dataset.key;
+    if (el.type === 'checkbox') s[key] = el.checked;
+    else if (el.type === 'number' || el.type === 'range' || key === 'fps') s[key] = Number(el.value);
+    else s[key] = el.value;
+    onSettingChanged(key);
+  });
+}
+for (const r of document.querySelectorAll('input[name="nickMode"]')) {
+  r.addEventListener('change', () => {
+    s.nickMode = r.value;
+    onSettingChanged('nickMode');
+  });
+}
+
+const renderPalette = () => {
+  const box = $('palette');
+  box.innerHTML = '';
+  (s.palette || NICK_PALETTE).forEach((c, i) => {
+    const inp = document.createElement('input');
+    inp.type = 'color';
+    inp.value = c;
+    inp.addEventListener('input', () => {
+      s.palette = [...s.palette];
+      s.palette[i] = inp.value;
+      onSettingChanged('palette');
+    });
+    box.appendChild(inp);
+  });
+};
+$('resetPalette').addEventListener('click', () => {
+  s.palette = [...NICK_PALETTE];
+  renderPalette();
+  onSettingChanged('palette');
+});
+
+const PRESETS = {
+  right: () => ({ boxW: Math.round(s.width * 0.23), boxH: Math.round(s.height * 0.66), boxX: Math.round(s.width * 0.75), boxY: Math.round(s.height * 0.26) }),
+  left: () => ({ boxW: Math.round(s.width * 0.23), boxH: Math.round(s.height * 0.66), boxX: Math.round(s.width * 0.02), boxY: Math.round(s.height * 0.26) }),
+  'bottom-left': () => ({ boxW: Math.round(s.width * 0.3), boxH: Math.round(s.height * 0.4), boxX: Math.round(s.width * 0.02), boxY: Math.round(s.height * 0.57) }),
+  full: () => ({ boxW: s.width, boxH: s.height, boxX: 0, boxY: 0 }),
+};
+for (const b of document.querySelectorAll('[data-preset]')) {
+  b.addEventListener('click', () => {
+    Object.assign(s, PRESETS[b.dataset.preset]());
+    clampBox();
+    saveSettings();
+    syncInputs();
+    reprepare();
+    resizePreview();
+  });
+}
+
+// 설치된 글꼴 목록
+(async () => {
+  const fallback = ['Malgun Gothic', 'NanumGothic', 'NanumSquare', 'Pretendard', 'Gulim', 'Dotum', 'Arial'];
+  let families = fallback;
+  try {
+    if (window.queryLocalFonts) {
+      const fonts = await window.queryLocalFonts();
+      families = [...new Set(fonts.map((f) => f.family))].sort((a, b) => a.localeCompare(b, 'ko'));
+    }
+  } catch {}
+  $('fontList').innerHTML = families.map((f) => `<option value="${f.replace(/"/g, '&quot;')}"></option>`).join('');
+})();
+
+// ---------- 채팅 불러오기 ----------
+$('openFile').addEventListener('click', async () => {
+  const f = await window.api.openChatFile();
+  if (f) setChats(parseChatText(f.text), f.name);
+});
+$('togglePaste').addEventListener('click', () => ($('pasteBox').hidden = !$('pasteBox').hidden));
+$('applyPaste').addEventListener('click', () => setChats(parseChatText($('pasteText').value), '붙여넣기'));
+// 파일을 창에 끌어다 놓아도 열림
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file) setChats(parseChatText(await file.text()), file.name);
+});
+
+// ---------- 미리보기 ----------
+const preview = $('preview');
+const pctx = preview.getContext('2d');
+let scale = 1;
+
+const resizePreview = () => {
+  const wrap = $('previewWrap');
+  scale = Math.min((wrap.clientWidth - 16) / s.width, (wrap.clientHeight - 16) / s.height);
+  preview.width = Math.max(1, Math.round(s.width * scale));
+  preview.height = Math.max(1, Math.round(s.height * scale));
+  draw();
+};
+new ResizeObserver(resizePreview).observe($('previewWrap'));
+
+const checker = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 16;
+  const x = c.getContext('2d');
+  x.fillStyle = '#d9d9d9';
+  x.fillRect(0, 0, 16, 16);
+  x.fillStyle = '#f2f2f2';
+  x.fillRect(0, 0, 8, 8);
+  x.fillRect(8, 8, 8, 8);
+  return c;
+})();
+
+function draw() {
+  if (rendering) return;
+  const bg = $('previewBg').value;
+  pctx.clearRect(0, 0, preview.width, preview.height);
+  pctx.fillStyle = bg === 'checker' ? pctx.createPattern(checker, 'repeat') : bg === 'dark' ? '#1b1d21' : '#f5f5f5';
+  pctx.fillRect(0, 0, preview.width, preview.height);
+
+  ensureBoxCanvas();
+  boxCtx.clearRect(0, 0, s.boxW, s.boxH);
+  drawFrame(boxCtx, items, t, s);
+  pctx.drawImage(boxCanvas, s.boxX * scale, s.boxY * scale, s.boxW * scale, s.boxH * scale);
+
+  // 채팅 상자 테두리와 크기 조절 손잡이
+  pctx.save();
+  pctx.setLineDash([5, 4]);
+  pctx.strokeStyle = 'rgba(0, 195, 137, 0.9)';
+  pctx.strokeRect(s.boxX * scale + 0.5, s.boxY * scale + 0.5, s.boxW * scale - 1, s.boxH * scale - 1);
+  pctx.setLineDash([]);
+  pctx.fillStyle = '#00c389';
+  pctx.fillRect((s.boxX + s.boxW) * scale - 9, (s.boxY + s.boxH) * scale - 9, 9, 9);
+  pctx.restore();
+
+  $('clock').textContent = formatClock(t);
+  $('seek').value = String(t);
+}
+$('previewBg').addEventListener('change', draw);
+
+// 상자 끌어서 옮기기 / 모서리 끌어서 크기 바꾸기
+let drag = null;
+preview.addEventListener('mousedown', (e) => {
+  const r = preview.getBoundingClientRect();
+  const x = (e.clientX - r.left) / scale;
+  const y = (e.clientY - r.top) / scale;
+  const nearCorner = Math.abs(x - (s.boxX + s.boxW)) < 14 / scale && Math.abs(y - (s.boxY + s.boxH)) < 14 / scale;
+  const inside = x >= s.boxX && x <= s.boxX + s.boxW && y >= s.boxY && y <= s.boxY + s.boxH;
+  if (!nearCorner && !inside) return;
+  drag = { mode: nearCorner ? 'resize' : 'move', x, y, box: { boxX: s.boxX, boxY: s.boxY, boxW: s.boxW, boxH: s.boxH } };
+});
+window.addEventListener('mousemove', (e) => {
+  const r = preview.getBoundingClientRect();
+  const x = (e.clientX - r.left) / scale;
+  const y = (e.clientY - r.top) / scale;
+  if (!drag) {
+    const nearCorner = Math.abs(x - (s.boxX + s.boxW)) < 14 / scale && Math.abs(y - (s.boxY + s.boxH)) < 14 / scale;
+    const inside = x >= s.boxX && x <= s.boxX + s.boxW && y >= s.boxY && y <= s.boxY + s.boxH;
+    preview.style.cursor = nearCorner ? 'nwse-resize' : inside ? 'move' : 'default';
+    return;
+  }
+  const dx = x - drag.x;
+  const dy = y - drag.y;
+  if (drag.mode === 'move') {
+    s.boxX = drag.box.boxX + dx;
+    s.boxY = drag.box.boxY + dy;
+  } else {
+    s.boxW = drag.box.boxW + dx;
+    s.boxH = drag.box.boxH + dy;
+  }
+  clampBox();
+  syncInputs();
+  if (drag.mode === 'resize') reprepare();
+  else draw();
+});
+window.addEventListener('mouseup', () => {
+  if (drag) saveSettings();
+  drag = null;
+});
+
+// ---------- 재생 ----------
+let lastTs = 0;
+const tick = (ts) => {
+  if (!playing) return;
+  const dt = lastTs ? (ts - lastTs) / 1000 : 0;
+  lastTs = ts;
+  t = Math.min(t + dt * speed, duration + 5);
+  draw();
+  if (t >= duration + 5) setPlaying(false);
+  else requestAnimationFrame(tick);
+};
+const setPlaying = (on) => {
+  playing = on;
+  $('play').textContent = on ? '⏸' : '▶';
+  if (on) {
+    lastTs = 0;
+    requestAnimationFrame(tick);
+  }
+};
+$('play').addEventListener('click', () => setPlaying(!playing));
+$('seek').addEventListener('input', () => {
+  t = Number($('seek').value);
+  draw();
+});
+$('speed').addEventListener('change', () => (speed = Number($('speed').value)));
+
+// ---------- 영상 만들기 ----------
+const setRenderUi = (on) => {
+  rendering = on;
+  $('render').disabled = on;
+  $('cancel').hidden = !on;
+  $('progress').hidden = !on;
+  for (const el of document.querySelectorAll('.panel input, .panel select, .panel button, .renderPanel select, .renderPanel input')) el.disabled = on;
+};
+
+const formatBytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}MB` : `${Math.round(n / 1e3)}KB`);
+
+// 실제 렌더링: 채팅 상자 크기만 그려서 ffmpeg로 보내고, 화면이 그대로인 구간은 "직전 프레임 반복"만 알린다
+const renderVideo = async ({ outPath, startSec, endSec, onProgress }) => {
+  await reprepare(true);
+  const fps = Number(s.fps) || 30;
+  const total = Math.max(1, Math.round((endSec - startSec) * fps));
+  await window.api.renderStart({ ...s, fps, outPath });
+  let prevKey;
+  let repeat = 0;
+  const began = performance.now();
+  let lastReport = 0;
+  try {
+    for (let f = 0; f < total; f++) {
+      if (cancelRequested) break;
+      const ft = startSec + f / fps;
+      const key = frameKey(items, ft, s);
+      if (f > 0 && key !== null && key === prevKey) {
+        repeat++;
+        if (repeat >= 600) {
+          await window.api.renderRepeat(repeat);
+          repeat = 0;
+        }
+      } else {
+        if (repeat) {
+          await window.api.renderRepeat(repeat);
+          repeat = 0;
+        }
+        boxCtx.clearRect(0, 0, s.boxW, s.boxH);
+        drawFrame(boxCtx, items, ft, s);
+        const data = boxCtx.getImageData(0, 0, s.boxW, s.boxH).data;
+        await window.api.renderFrame(data.buffer);
+        prevKey = key;
+      }
+      const now = performance.now();
+      if (onProgress && now - lastReport > 250) {
+        lastReport = now;
+        onProgress(f + 1, total, (f + 1) / ((now - began) / 1000));
+      }
+    }
+    if (repeat && !cancelRequested) await window.api.renderRepeat(repeat);
+  } catch (err) {
+    await window.api.renderCancel();
+    throw err;
+  }
+  if (cancelRequested) {
+    await window.api.renderCancel();
+    return null;
+  }
+  const result = await window.api.renderFinish();
+  return { ...result, frames: total, seconds: (performance.now() - began) / 1000 };
+};
+
+$('render').addEventListener('click', async () => {
+  if (!items.length) {
+    $('renderInfo').textContent = '먼저 채팅을 불러와주세요.';
+    return;
+  }
+  const startSec = parseClock($('rangeStart').value) ?? 0;
+  const endSec = parseClock($('rangeEnd').value) ?? Math.ceil(duration) + 5;
+  if (endSec <= startSec) {
+    $('renderInfo').textContent = '끝 시각이 시작 시각보다 뒤여야 해요.';
+    return;
+  }
+  const outPath = await window.api.chooseOutput({ format: s.format, defaultName: `chat_${formatClock(startSec).replace(/:/g, '')}-${formatClock(endSec).replace(/:/g, '')}` });
+  if (!outPath) return;
+
+  setPlaying(false);
+  cancelRequested = false;
+  setRenderUi(true);
+  const videoSec = endSec - startSec;
+  $('renderInfo').textContent = '렌더링 준비 중...';
+  try {
+    const result = await renderVideo({
+      outPath,
+      startSec,
+      endSec,
+      onProgress: (done, total, fps) => {
+        $('bar').style.width = `${(done / total) * 100}%`;
+        const remain = (total - done) / Math.max(fps, 0.001);
+        $('renderInfo').textContent = `${((done / total) * 100).toFixed(1)}% · ${done.toLocaleString()} / ${total.toLocaleString()} 프레임 · 실시간의 ${(fps / (Number(s.fps) || 30)).toFixed(1)}배 속도 · 남은 시간 약 ${formatClock(remain)}`;
+      },
+    });
+    if (!result) $('renderInfo').textContent = '취소했어요.';
+    else {
+      $('renderInfo').innerHTML = '';
+      const msg = document.createElement('span');
+      msg.textContent = `완료! ${formatClock(videoSec)} 분량 · ${formatBytes(result.size)} · 걸린 시간 ${formatClock(result.seconds)}  `;
+      const open = document.createElement('button');
+      open.textContent = '폴더 열기';
+      open.addEventListener('click', () => window.api.reveal(result.path));
+      $('renderInfo').append(msg, open);
+    }
+  } catch (err) {
+    $('renderInfo').textContent = `오류: ${err.message}`;
+  } finally {
+    setRenderUi(false);
+    draw();
+  }
+});
+$('cancel').addEventListener('click', () => (cancelRequested = true));
+
+// ---------- 시작 ----------
+clampBox();
+syncInputs();
+resizePreview();
+
+// 자동 점검 모드 (CI): 예시 채팅으로 짧은 영상을 만들고 결과를 알린 뒤 종료
+const smokeOut = new URLSearchParams(location.search).get('smoke');
+if (smokeOut) {
+  (async () => {
+    try {
+      const seconds = Number(new URLSearchParams(location.search).get('seconds')) || 4;
+      const sample = [];
+      const names = ['치즈냥', '하늘바라기', '익명의 후원자', 'player_one', '말랑볼살'];
+      // 초당 0~6개, 가끔 조용한 구간
+      let seed = 7;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      for (let sec = 0; sec < seconds; sec++) {
+        const n = sec % 37 >= 32 ? 0 : Math.floor(rnd() * 7);
+        for (let k = 0; k < n; k++) {
+          const i = sample.length;
+          sample.push({ ms: sec * 1000, nickname: names[i % names.length], message: `테스트 채팅 ${i + 1} 입니다 ㅋㅋㅋ${rnd() < 0.3 ? ' 줄바꿈이 되는지 보려고 조금 길게 써봅니다' : ''}`, donation: i === 7 ? '영상 후원 3,000원' : '' });
+        }
+      }
+      const fmtParam = new URLSearchParams(location.search).get('format');
+      const outputParam = new URLSearchParams(location.search).get('output') || 'full';
+      Object.assign(s, DEFAULT_SETTINGS, { outputMode: outputParam, format: fmtParam || (/\.mov$/i.test(smokeOut) ? 'mov-qtrle' : /\.mp4$/i.test(smokeOut) ? 'mp4-green' : 'webm') });
+      await setChats(sample, 'smoke');
+      const result = await renderVideo({ outPath: smokeOut, startSec: 0, endSec: seconds });
+      window.api.smokeDone({ ok: !!result && result.size > 0, ...result });
+    } catch (err) {
+      window.api.smokeDone({ ok: false, error: String(err && err.message ? err.message : err) });
+    }
+  })();
+}

@@ -1,0 +1,39 @@
+{
+  "name": "chzzk-chattovideo",
+  "productName": "ChzzkChatToVideo",
+  "version": "0.1.0",
+  "description": "치지직/SOOP 채팅 내역을 생방송 채팅처럼 올라가는 투명 배경 영상으로 만드는 프로그램",
+  "main": "src/main.js",
+  "author": "odq1917",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke-test=smoke-test.webm",
+    "dist": "electron-builder --win portable nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.odq1917.chzzkchattovideo",
+    "productName": "ChzzkChatToVideo",
+    "files": ["src/**/*", "package.json"],
+    "asarUnpack": ["node_modules/ffmpeg-static/**"],
+    "win": {
+      "target": ["portable", "nsis"]
+    },
+    "portable": {
+      "artifactName": "ChzzkChatToVideo-${version}-portable.exe"
+    },
+    "nsis": {
+      "artifactName": "ChzzkChatToVideo-${version}-setup.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
