@@ -49,11 +49,12 @@
         <div class="grid2">
           <label>글자 크기 <input type="number" data-key="fontSize" min="8" max="200" /></label>
           <label>줄 높이 배수 <input type="number" data-key="lineHeight" min="1" max="3" step="0.05" /></label>
-          <label>채팅 사이 간격 <input type="number" data-key="messageGap" min="0" max="100" /></label>
+          <label id="messageGapRow">채팅 사이 간격 <input type="number" data-key="messageGap" min="0" max="100" /></label>
           <label>글자 색 <input type="color" data-key="textColor" /></label>
           <label>외곽선 두께 <input type="number" data-key="outlineWidth" min="0" max="20" step="0.5" /></label>
           <label>외곽선 색 <input type="color" data-key="outlineColor" /></label>
         </div>
+        <label class="check"><input type="checkbox" data-key="textBold" /> 채팅 내용 굵게</label>
       </section>
 
       <section>
@@ -75,12 +76,31 @@
       </section>
 
       <section>
-        <h2>5. 배경 상자</h2>
-        <div class="grid2">
+        <h2>5. 배경</h2>
+        <label>배경 모양
+          <select data-key="bgMode">
+            <option value="bubble">채팅마다 말풍선 (글자 길이에 맞춤)</option>
+            <option value="box">채팅 상자 전체에 하나</option>
+            <option value="none">없음</option>
+          </select>
+        </label>
+        <div id="bubbleRows" class="grid2">
+          <label>색 <input type="color" data-key="bubbleColor" /></label>
+          <label>불투명도 <input type="range" data-key="bubbleOpacity" min="0" max="1" step="0.05" /></label>
+          <label>모서리 둥글기 <input type="number" data-key="bubbleRadius" min="0" max="200" /></label>
+          <label>말풍선 사이 간격 <input type="number" data-key="bubbleGap" min="0" max="100" /></label>
+          <label>좌우 여백 <input type="number" data-key="bubblePadX" min="0" max="100" /></label>
+          <label>위아래 여백 <input type="number" data-key="bubblePadY" min="0" max="100" /></label>
+        </div>
+        <label id="bubbleShadowRow" class="check"><input type="checkbox" data-key="bubbleShadow" /> 말풍선 아래 옅은 그림자</label>
+        <p id="bubbleHint" class="hint">둥글기를 말풍선 높이의 절반 이상으로 하면 알약 모양이 돼요. 위아래 여백은 줄 높이 기준이에요.</p>
+        <div id="boxBgRows" class="grid2">
           <label>색 <input type="color" data-key="bgColor" /></label>
-          <label>투명도 <input type="range" data-key="bgOpacity" min="0" max="1" step="0.05" /></label>
+          <label>불투명도 <input type="range" data-key="bgOpacity" min="0" max="1" step="0.05" /></label>
           <label>모서리 둥글기 <input type="number" data-key="bgRadius" min="0" max="200" /></label>
-          <label>안쪽 여백 <input type="number" data-key="padding" min="0" max="200" /></label>
+        </div>
+        <div class="grid2">
+          <label>채팅 상자 안쪽 여백 <input type="number" data-key="padding" min="0" max="200" /></label>
         </div>
       </section>
 

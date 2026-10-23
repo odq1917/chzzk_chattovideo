@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS = {
   lineHeight: 1.4, // 글자 크기 대비 줄 높이
   messageGap: 6, // 채팅 사이 간격 (px)
   textColor: '#ffffff',
+  textBold: true, // 채팅 내용 굵게
   outlineWidth: 4, // 글자 외곽선 두께 (0이면 없음)
   outlineColor: '#000000',
   // 닉네임: 'palette'(10색 중 닉네임별 자동 배정) | 'single'(한 가지 색) | 'hidden'(표시 안 함)
@@ -38,11 +39,21 @@ export const DEFAULT_SETTINGS = {
   nickSeparator: ' ', // 닉네임과 내용 사이
   showDonation: true, // 후원 라벨이 있으면 표시
   donationColor: '#fbbf24',
-  // 배경 상자
+  // 배경: 'none'(없음) | 'box'(채팅 상자 전체에 하나) | 'bubble'(채팅마다 글자 길이에 맞춘 말풍선)
+  bgMode: 'bubble',
+  // 상자 전체 배경
   bgColor: '#000000',
   bgOpacity: 0, // 0~1
   bgRadius: 12,
-  padding: 12,
+  padding: 12, // 채팅 상자 안쪽 여백 (모든 모드 공통)
+  // 말풍선 (기본값은 사용자가 준 1080p 참고 화면을 재서 맞춤: 회색 반투명, 글자 좌우 12px, 둥글기 12px)
+  bubbleColor: '#808080',
+  bubbleOpacity: 0.25, // 0~1
+  bubbleRadius: 12, // 높이의 절반 이상이면 알약 모양
+  bubblePadX: 12, // 글자 왼쪽/오른쪽 여백
+  bubblePadY: 7, // 줄 위/아래 여백 (줄 높이 기준)
+  bubbleGap: 16, // 말풍선 사이 간격
+  bubbleShadow: true, // 아래쪽 옅은 그림자
   // 연출
   scrollDuration: 0.22, // 새 채팅이 밀고 올라오는 시간(초)
   fadeIn: true,
@@ -97,9 +108,10 @@ const layoutMessage = (ctx, m, s, widthCache) => {
   const runs = [];
   if (s.showDonation && m.donation) runs.push({ text: `[${m.donation}]${s.nickSeparator}`, color: s.donationColor, bold: false });
   if (s.nickMode !== 'hidden' && m.nickname) runs.push({ text: m.nickname + s.nickSeparator, color: nicknameColor(m.nickname, s), bold: s.nickBold });
-  runs.push({ text: m.message, color: s.textColor, bold: false });
+  runs.push({ text: m.message, color: s.textColor, bold: !!s.textBold });
 
-  const maxW = Math.max(10, s.boxW - s.padding * 2);
+  const bubble = s.bgMode === 'bubble';
+  const maxW = Math.max(10, s.boxW - s.padding * 2 - (bubble ? s.bubblePadX * 2 : 0));
   const charW = (ch, bold) => {
     const key = (bold ? 'b' : 'n') + ch;
     let w = widthCache.get(key);
@@ -145,7 +157,18 @@ const layoutMessage = (ctx, m, s, widthCache) => {
     return out;
   });
   const lineH = s.fontSize * s.lineHeight;
-  return { lines: merged, height: merged.length * lineH + s.messageGap };
+  if (!bubble) return { lines: merged, height: merged.length * lineH + s.messageGap };
+  // 말풍선 너비 = 가장 긴 줄(줄 끝 공백 제외) + 좌우 여백
+  let textW = 0;
+  for (const line of lines) {
+    let end = line.length;
+    while (end > 0 && line[end - 1].ch === ' ') end--;
+    let w = 0;
+    for (let k = 0; k < end; k++) w += line[k].w;
+    textW = Math.max(textW, w);
+  }
+  const bubbleH = merged.length * lineH + s.bubblePadY * 2;
+  return { lines: merged, bubbleW: Math.ceil(textW + s.bubblePadX * 2), bubbleH, height: bubbleH + s.bubbleGap };
 };
 
 // 채팅 전체를 미리 줄바꿈/높이 계산해 둔다 (설정이 바뀌면 다시)
@@ -178,9 +201,10 @@ export const frameKey = (items, t, s) => {
   return idx;
 };
 
-const roundRect = (ctx, x, y, w, h, r) => {
+// newPath=false면 지금 경로에 이어 붙인다 (clip용 구멍 뚫기)
+const roundRect = (ctx, x, y, w, h, r, newPath = true) => {
   const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
+  if (newPath) ctx.beginPath();
   ctx.moveTo(x + rr, y);
   ctx.arcTo(x + w, y, x + w, y + h, rr);
   ctx.arcTo(x + w, y + h, x, y + h, rr);
@@ -192,7 +216,8 @@ const roundRect = (ctx, x, y, w, h, r) => {
 // 채팅 상자 하나를 그린다. 새 채팅은 아래에서 밀고 올라오고, 예전 채팅은 위로 사라진다.
 export const drawFrame = (ctx, items, t, s) => {
   const { boxW: W, boxH: H, padding: P } = s;
-  if (s.bgOpacity > 0) {
+  const bubble = s.bgMode === 'bubble';
+  if (s.bgMode === 'box' && s.bgOpacity > 0) {
     ctx.save();
     ctx.globalAlpha = s.bgOpacity;
     ctx.fillStyle = s.bgColor;
@@ -225,11 +250,38 @@ export const drawFrame = (ctx, items, t, s) => {
     const top = bottom - it.height;
     if (bottom < 0) break;
     const age = t - it.t;
-    ctx.globalAlpha = s.fadeIn ? Math.min(1, 0.15 + age / D) : 1;
+    const alpha = s.fadeIn ? Math.min(1, 0.15 + age / D) : 1;
+    // 말풍선은 글자보다 먼저 (페이드 인도 같이 받는다)
+    if (bubble && it.bubbleW && s.bubbleOpacity > 0) {
+      if (s.bubbleShadow) {
+        // 그림자는 말풍선 바깥에만 (반투명 말풍선 안쪽까지 어두워지지 않게)
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, W, H);
+        roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius, false);
+        ctx.clip('evenodd');
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = `rgba(0, 0, 0, ${Math.min(1, s.bubbleOpacity * 0.6).toFixed(3)})`;
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetY = 2;
+        ctx.fillStyle = '#000';
+        roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.globalAlpha = alpha * s.bubbleOpacity;
+      ctx.fillStyle = s.bubbleColor;
+      roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = alpha;
+    const textTop = bubble ? top + s.bubblePadY : top;
     for (let li = 0; li < it.lines.length; li++) {
-      const y = top + li * lineH + baselineOffset;
+      const y = textTop + li * lineH + baselineOffset;
       if (y < -lineH || y > H + lineH) continue;
-      let x = P;
+      let x = bubble ? P + s.bubblePadX : P;
       for (const run of it.lines[li]) {
         ctx.font = fontOf(s, run.bold);
         if (s.outlineWidth > 0) {
