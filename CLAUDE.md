@@ -75,6 +75,7 @@
 - **글자 간격 `letterSpacing` (v0.3.0):** 캔버스 `ctx.letterSpacing`은 글자마다 **뒤에** 간격을 붙인다. 그래서 줄바꿈 계산의 글자 폭에도 글자마다 더하고, 말풍선 너비에서는 마지막 글자 뒤 하나를 뺀다. 폭을 잴 때는 `ctx.letterSpacing = '0px'`로 (같은 캔버스를 그리기에도 쓰니까).
 - **위쪽 페이드 `fadeTop`/`fadeTopHeight` (v0.3.0, 기본 켬 120px):** `drawFrame` = `drawChats` → 위쪽 그라데이션을 `destination-out`으로 지움 → 상자 전체 배경은 그 뒤에 `destination-over`로 깐다 (배경까지 지워지지 않게). 사용자 참고 화면에도 위쪽 말풍선이 흐려지는 연출이 있다.
 - **왼쪽 단계 접기 (v0.3.0):** `.panel > section`의 `h2`를 누르면 `collapsed` 클래스. 접힌 번호 목록은 localStorage `chattovideo:collapsed`.
+  - 단계마다 카드(흰 바탕 + 제목 막대 + 번호 동그라미, 접히면 번호가 회색). 번호 동그라미는 `h2`의 "3. 글자" 글자를 app.js가 바꿔 만든다. 카드 안 묶음 제목은 `<p class="sub">` (점선 구분). 사용자: "각 항목이 어디부터 어디까진지 헷갈린다" → 이렇게 바꿈.
 - **글꼴 목록 (v0.3.0):** `useLocalFonts`(기본 켬)면 `queryLocalFonts()`로 설치된 글꼴 전체(이 PC 963종) → 글꼴 이름 입력칸의 datalist + 「설치된 글꼴에서 고르기」 select(옵션마다 그 글꼴로 표시). 끄면 기본 7개만. 권한은 main.js가 `local-fonts`만 허용.
 - **닉네임 색:** `palette`(기본 10색, 닉네임 FNV 해시로 배정 → 같은 닉네임은 항상 같은 색) / `single`(한 색) / `hidden`.
 - **`frameKey`:** 움직이는 중이면 `null`, 아니면 마지막 채팅 인덱스. 렌더링 때 키가 같으면 그 프레임은 다시 그리지 않고 "직전 프레임 반복"만 보낸다 (채팅 없는 구간이 매우 빠름).
