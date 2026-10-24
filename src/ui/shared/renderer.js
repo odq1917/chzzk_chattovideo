@@ -58,6 +58,9 @@ export const DEFAULT_SETTINGS = {
   bubblePadBottom: 7, // 마지막 줄 아래 여백 (줄 높이 기준)
   bubbleGap: 16, // 말풍선 사이 간격
   bubbleShadow: true, // 아래쪽 옅은 그림자
+  bubbleShadowStrength: 0.08, // 그림자 진하기 (0~1). 0.15에서 "딱딱하다"는 의견 → 원본 방송 화면을 재서 절반쯤으로
+  bubbleShadowBlur: 6, // 그림자 퍼짐 (px)
+  bubbleShadowY: 2, // 그림자가 아래로 내려가는 거리 (px)
   // 이모티콘 ({:이름:}) — 기본 크기는 참고 화면 기준 (글자 ~26px에 이모티콘 ~40px)
   emojiScale: 1.5, // 글자 크기 대비
   emojiGap: 2, // 이모티콘 좌우 간격 (px)
@@ -357,10 +360,10 @@ const drawChats = (ctx, items, t, s, lib) => {
         // 이 채팅의 글자·이모티콘은 아직 안 그렸고 다른 말풍선과는 간격이 있어서 지워도 되는 건 그림자뿐이다.
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.shadowColor = `rgba(0, 0, 0, ${Math.min(1, s.bubbleOpacity * 0.6).toFixed(3)})`;
-        ctx.shadowBlur = 6;
+        ctx.shadowColor = `rgba(0, 0, 0, ${Math.min(1, Math.max(0, Number(s.bubbleShadowStrength) || 0)).toFixed(3)})`;
+        ctx.shadowBlur = Math.max(0, Number(s.bubbleShadowBlur) || 0);
         ctx.shadowOffsetX = SHADOW_OFF;
-        ctx.shadowOffsetY = 2;
+        ctx.shadowOffsetY = Number(s.bubbleShadowY) || 0;
         ctx.fillStyle = '#000';
         roundRect(ctx, P - SHADOW_OFF, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
         ctx.fill();

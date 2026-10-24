@@ -104,6 +104,11 @@
           <label>아래 여백 <input type="number" data-key="bubblePadBottom" min="-20" max="100" step="0.5" /></label>
         </div>
         <label id="bubbleShadowRow" class="check"><input type="checkbox" data-key="bubbleShadow" /> 말풍선 아래 옅은 그림자</label>
+        <div id="bubbleShadowRows" class="grid2">
+          <label>그림자 진하기 <input type="range" data-key="bubbleShadowStrength" min="0" max="0.6" step="0.01" /></label>
+          <label>그림자 퍼짐 (px) <input type="number" data-key="bubbleShadowBlur" min="0" max="60" step="0.5" /></label>
+          <label>그림자 아래로 (px) <input type="number" data-key="bubbleShadowY" min="-30" max="30" step="0.5" /></label>
+        </div>
         <p id="bubbleHint" class="hint">둥글기를 말풍선 높이의 절반 이상으로 하면 알약 모양이 돼요. 위·아래 여백은 줄 높이(글자 크기 × 줄 높이 배수) 바깥쪽 기준이라, 글자를 위아래로 옮기려면 위·아래 여백을 서로 다르게 주세요.</p>
         <p id="boxBgSub" class="sub">상자 배경</p>
         <div id="boxBgRows" class="grid2">
