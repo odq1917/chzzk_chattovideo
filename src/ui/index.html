@@ -63,6 +63,14 @@
           <label>외곽선 색 <input type="color" data-key="outlineColor" /></label>
         </div>
         <label class="check"><input type="checkbox" data-key="textBold" /> 채팅 내용 굵게</label>
+        <p class="sub">글자 그림자</p>
+        <label class="check"><input type="checkbox" data-key="textShadow" /> 글자 밑에 옅은 그림자 (입체감)</label>
+        <div id="textShadowRows" class="grid2">
+          <label>진하기 <input type="range" data-key="textShadowOpacity" min="0" max="1" step="0.05" /></label>
+          <label>퍼짐 (px) <input type="number" data-key="textShadowBlur" min="0" max="30" step="0.5" /></label>
+          <label>오른쪽으로 (px) <input type="number" data-key="textShadowX" min="-20" max="20" step="0.5" /></label>
+          <label>아래로 (px) <input type="number" data-key="textShadowY" min="-20" max="20" step="0.5" /></label>
+        </div>
       </section>
 
       <section>
