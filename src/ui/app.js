@@ -16,6 +16,8 @@ const loadSettings = () => {
     // 0.3.0 테스트판의 좌우/위아래 여백 → 왼쪽·오른쪽·위·아래 따로
     if (saved.bubblePadX !== undefined && saved.bubblePadLeft === undefined) saved.bubblePadLeft = saved.bubblePadRight = saved.bubblePadX;
     if (saved.bubblePadY !== undefined && saved.bubblePadTop === undefined) saved.bubblePadTop = saved.bubblePadBottom = saved.bubblePadY;
+    // 글자 그림자가 생기기 전(0.3.0 테스트판) 기본 외곽선 4를 그대로 쓰던 사람은 새 기본값으로
+    if (saved.textShadow === undefined && saved.outlineWidth === 4) saved.outlineWidth = DEFAULT_SETTINGS.outlineWidth;
     delete saved.bubblePadX;
     delete saved.bubblePadY;
     return { ...DEFAULT_SETTINGS, ...saved };
@@ -119,6 +121,7 @@ const syncInputs = () => {
   for (const id of ['boxBgSub', 'boxBgRows']) $(id).hidden = s.bgMode !== 'box';
   $('messageGapRow').hidden = bubble; // 말풍선 모드에서는 「말풍선 사이 간격」을 쓴다
   $('fadeTopRow').hidden = !s.fadeTop;
+  $('textShadowRows').hidden = !s.textShadow;
   $('fontPickRow').hidden = !s.useLocalFonts;
   if ($('fontPick').value !== s.fontFamily) $('fontPick').value = s.fontFamily; // 목록에 없으면 빈칸
   renderPalette();
@@ -128,7 +131,7 @@ const onSettingChanged = (key) => {
   clampBox();
   saveSettings();
   if (['width', 'height', 'boxX', 'boxY', 'boxW', 'boxH'].includes(key)) syncInputs();
-  if (['format', 'nickMode', 'bgMode', 'bubbleShadow', 'fadeTop', 'useLocalFonts', 'fontFamily'].includes(key)) syncInputs();
+  if (['format', 'nickMode', 'bgMode', 'bubbleShadow', 'textShadow', 'fadeTop', 'useLocalFonts', 'fontFamily'].includes(key)) syncInputs();
   if (key === 'useLocalFonts') loadFontList();
   if (LAYOUT_KEYS.has(key)) reprepare();
   else {

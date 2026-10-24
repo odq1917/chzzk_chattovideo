@@ -31,8 +31,14 @@ export const DEFAULT_SETTINGS = {
   messageGap: 6, // 채팅 사이 간격 (px)
   textColor: '#ffffff',
   textBold: true, // 채팅 내용 굵게
-  outlineWidth: 4, // 글자 외곽선 두께 (0이면 없음)
+  outlineWidth: 2.5, // 글자 외곽선 두께 (0이면 없음). 4였는데 참고 화면보다 두껍고 획이 붙은 곳에서 뭉쳐 보여서 2.5 + 글자 그림자로
   outlineColor: '#000000',
+  // 글자 그림자 (외곽선 밑에 오른쪽 아래로 깔리는 옅은 그림자 — 참고 화면의 입체감)
+  textShadow: true,
+  textShadowOpacity: 0.6,
+  textShadowBlur: 2,
+  textShadowX: 1,
+  textShadowY: 1.5,
   // 닉네임: 'palette'(10색 중 닉네임별 자동 배정) | 'single'(한 가지 색) | 'hidden'(표시 안 함)
   nickMode: 'palette',
   nickColor: '#00ffa3',
@@ -380,7 +386,27 @@ const drawItem = (ctx, it, top, t, s, lib) => {
     lineTop += lh;
     if (thisTop + lh < 0 || thisTop > H) continue;
     const x0 = bubble ? P + s.bubblePadLeft : P;
-    // 외곽선을 줄 전체에 먼저 그리고 글자·이모티콘을 나중에 (닉네임→내용처럼 조각이 바뀌는 곳에서 뒤 조각의 외곽선이 앞 글자를 덮지 않게)
+    // 글자 그림자 → 외곽선 → 글자·이모티콘 순서로, 단계마다 줄 전체를 먼저 그린다
+    // (닉네임→내용처럼 조각이 바뀌는 곳에서 뒤 조각의 외곽선·그림자가 앞 글자를 덮지 않게)
+    if (s.textShadow && s.textShadowOpacity > 0) {
+      ctx.save();
+      ctx.shadowColor = `rgba(0, 0, 0, ${Math.min(1, Math.max(0, Number(s.textShadowOpacity) || 0)).toFixed(3)})`;
+      ctx.shadowBlur = Math.max(0, Number(s.textShadowBlur) || 0);
+      ctx.shadowOffsetX = SHADOW_OFF + (Number(s.textShadowX) || 0); // 글자 모양은 캔버스 밖에, 그림자만 제자리
+      ctx.shadowOffsetY = Number(s.textShadowY) || 0;
+      ctx.lineWidth = Math.max(0, s.outlineWidth);
+      ctx.strokeStyle = ctx.fillStyle = '#000';
+      let x = x0;
+      for (const run of it.lines[li]) {
+        if (!run.emoji) {
+          ctx.font = fontOf(s, run.bold);
+          if (s.outlineWidth > 0) ctx.strokeText(run.text, x - SHADOW_OFF, y);
+          ctx.fillText(run.text, x - SHADOW_OFF, y);
+        }
+        x += run.w;
+      }
+      ctx.restore();
+    }
     if (s.outlineWidth > 0) {
       ctx.lineWidth = s.outlineWidth;
       ctx.strokeStyle = s.outlineColor;
