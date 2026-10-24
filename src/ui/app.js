@@ -114,8 +114,8 @@ const syncInputs = () => {
   $('paletteRow').hidden = s.nickMode !== 'palette';
   $('greenRow').hidden = s.format !== 'mp4-green';
   const bubble = s.bgMode === 'bubble';
-  for (const id of ['bubbleRows', 'bubbleShadowRow', 'bubbleHint']) $(id).hidden = !bubble;
-  $('boxBgRows').hidden = s.bgMode !== 'box';
+  for (const id of ['bubbleSub', 'bubbleRows', 'bubbleShadowRow', 'bubbleHint']) $(id).hidden = !bubble;
+  for (const id of ['boxBgSub', 'boxBgRows']) $(id).hidden = s.bgMode !== 'box';
   $('messageGapRow').hidden = bubble; // 말풍선 모드에서는 「말풍선 사이 간격」을 쓴다
   $('fadeTopRow').hidden = !s.fadeTop;
   $('fontPickRow').hidden = !s.useLocalFonts;
@@ -229,6 +229,9 @@ try {
 } catch {}
 document.querySelectorAll('.panel > section').forEach((sec, i) => {
   const h = sec.querySelector('h2');
+  // "3. 글자" → 번호 동그라미 + 제목 (구분이 잘 보이게)
+  const m = h.textContent.match(/^(\d+)\.\s*(.*)$/);
+  if (m) h.innerHTML = `<span class="num">${m[1]}</span><span class="title">${m[2]}</span>`;
   sec.classList.toggle('collapsed', collapsed.includes(i));
   h.addEventListener('click', () => {
     sec.classList.toggle('collapsed');
