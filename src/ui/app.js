@@ -115,6 +115,7 @@ const syncInputs = () => {
   $('greenRow').hidden = s.format !== 'mp4-green';
   const bubble = s.bgMode === 'bubble';
   for (const id of ['bubbleSub', 'bubbleRows', 'bubbleShadowRow', 'bubbleHint']) $(id).hidden = !bubble;
+  $('bubbleShadowRows').hidden = !bubble || !s.bubbleShadow;
   for (const id of ['boxBgSub', 'boxBgRows']) $(id).hidden = s.bgMode !== 'box';
   $('messageGapRow').hidden = bubble; // 말풍선 모드에서는 「말풍선 사이 간격」을 쓴다
   $('fadeTopRow').hidden = !s.fadeTop;
@@ -127,7 +128,7 @@ const onSettingChanged = (key) => {
   clampBox();
   saveSettings();
   if (['width', 'height', 'boxX', 'boxY', 'boxW', 'boxH'].includes(key)) syncInputs();
-  if (['format', 'nickMode', 'bgMode', 'fadeTop', 'useLocalFonts', 'fontFamily'].includes(key)) syncInputs();
+  if (['format', 'nickMode', 'bgMode', 'bubbleShadow', 'fadeTop', 'useLocalFonts', 'fontFamily'].includes(key)) syncInputs();
   if (key === 'useLocalFonts') loadFontList();
   if (LAYOUT_KEYS.has(key)) reprepare();
   else {
