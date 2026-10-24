@@ -182,7 +182,10 @@
   node dev/ui-reference.cjs <저장폴더>   # 참고 이미지·영상, 100% 확대, 크게 보기, Esc
   ```
   설정이 localStorage에 남아 이전 실행 설정으로 뜰 수 있다 (ui-reference는 시작할 때 지운다).
-- **실제 PC에서만 확인 가능한 것 (아직 미확인):** 창 전체 화면 전환, 프리미어에서 WebM 투명 배경 불러오기, 설치된 글꼴 목록(`queryLocalFonts`).
+- **실제 PC에서만 확인 가능한 것 (아직 미확인):** 창 전체 화면 전환, 프리미어에서 QuickTime Animation MOV 투명 배경.
+- **프리미어는 WebM 투명을 안 보여준다 (2026-10-24 사용자 실측, 프리미어 버전 미상):** 사용자 PC에서 만든 2시간 9분 WebM(1080p 전체, 410MB)을 프리미어에 올리니 배경이 검정. 파일 자체는 정상(`ALPHA_MODE=1`, libvpx-vp9로 풀면 93%가 알파 0) → 프리미어가 VP9 알파를 무시하는 것. 형식 목록 문구를 바꿨다 (WebM: "프리미어에서는 투명이 안 보임", QuickTime Animation: "프리미어용 추천").
+  - 실제 채팅(VOD 15822204, 00:24~00:26) 2분으로 잰 크기 → 2시간 9분 환산: QuickTime Animation 전체 9.8GB / 상자만 8.2GB (2분 렌더 9.0초 / 3.0초), ProRes 4444 전체 69GB / 상자만 63GB (60초 / 10초). PNG 코덱 MOV는 QuickTime Animation보다 컸다.
+- 설치된 글꼴 목록(`queryLocalFonts`)은 이 PC에서 964종 불러와짐 (확인됨).
 - **로컬 Windows PC (2026-10-24 클라우드에서 옮김):** 위치 `C:\Users\ODQ\Desktop\도마\1ClaudeProject_26.10\chzzk_chattovideo`, Node 22.17. 소스로 점검 모드 `--smoke-seconds=120 --smoke-format=webm --smoke-output=box` → 3600프레임, 8조각, **3.1초**, 22.0MB (5장 리눅스 15초 대비). 다른 형식·패키징 exe·Playwright 화면 확인은 이 PC에서 아직 안 돌려봤다.
 
 ## 9. 다음 작업 (사용자가 요청했고 계획까지 합의한 것)
