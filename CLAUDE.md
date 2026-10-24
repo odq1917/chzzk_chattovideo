@@ -59,7 +59,8 @@
 - 채팅 상자 크기의 OffscreenCanvas(`willReadFrequently: true`)에 그린다.
 - 시각 t에서 마지막으로 등장한 채팅을 이진 탐색 → 아래에서부터 위로 쌓는다.
 - **부드러운 스크롤:** 아직 올라오는 중인 채팅들의 남은 높이 `height × (1 − easeOutCubic(age / scrollDuration))`를 합쳐 전체를 그만큼 아래로 민다. 채팅이 몰려도 밀어 올리는 거리가 합쳐져 끊기지 않는다. 새 채팅은 선택적으로 서서히 나타남.
-- 외곽선(stroke)을 먼저, 채우기(fill)를 나중에.
+- 외곽선(stroke)을 먼저, 채우기(fill)를 나중에. **줄 단위로** 외곽선을 전부 그린 뒤 글자·이모티콘을 그린다 (조각별로 번갈아 그리면 닉네임→내용 경계에서 뒤 조각 외곽선이 앞 글자를 덮는다).
+- **나타나는 중(페이드 인)인 채팅은 따로 그려서 통째로 반투명하게 얹는다** (`drawItem` → `fadeLayer` → `drawImage` + `globalAlpha`). 외곽선과 글자를 각각 반투명으로 그리면 검은 외곽선이 흰 글자 밑으로 비쳐 글자가 회색으로 탁해졌다 (사용자 제보 "외곽선 넣는 과정이 어색", 무손실 렌더에서 흰 글자가 255 → 186~204). 고친 뒤 255. 대신 2분 WebM(빽빽한 예시 채팅) 6.1 → 7.6초.
 - **배경 모양 `bgMode` (v0.3.0):** `bubble`(채팅마다 말풍선, 기본) / `box`(상자 전체 하나, v0.2.0 방식) / `none`.
   - 말풍선 너비 = 가장 긴 줄(줄 끝 공백 제외) + `bubblePadLeft + bubblePadRight`, 높이 = 줄 수 × 줄 높이 + `bubblePadTop + bubblePadBottom`. `layoutMessage`가 `bubbleW/bubbleH`를 계산하고, 채팅 높이 = `bubbleH + bubbleGap` (말풍선 모드에서는 `messageGap` 대신 `bubbleGap`).
   - 여백은 처음에 좌우(`bubblePadX`)/위아래(`bubblePadY`) 둘이었다가 사용자 요청으로 네 방향 따로. 예전 키는 `loadSettings`에서 옮기고 지운다.

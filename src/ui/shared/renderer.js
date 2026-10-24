@@ -320,9 +320,99 @@ export const drawFrame = (ctx, items, t, s, lib) => {
 
 const SHADOW_OFF = 100000; // 말풍선 그림자용 도형을 그릴 캔버스 밖 거리
 
-const drawChats = (ctx, items, t, s, lib) => {
+const FADE_LAYER_MARGIN = 40; // 나타나는 채팅을 따로 그릴 때 그림자·외곽선이 잘리지 않게 위아래 여유 (px)
+let fadeCanvas = null;
+const fadeLayer = (W, H) => {
+  if (!fadeCanvas || fadeCanvas.canvas.width !== W || fadeCanvas.canvas.height !== H) fadeCanvas = new OffscreenCanvas(W, H).getContext('2d');
+  return fadeCanvas;
+};
+
+const setTextState = (ctx, s) => {
+  ctx.textBaseline = 'alphabetic';
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  ctx.letterSpacing = `${Number(s.letterSpacing) || 0}px`;
+  ctx.imageSmoothingQuality = 'high'; // 이모티콘 확대/축소
+};
+
+// 채팅 하나(말풍선 + 글자 + 이모티콘)를 불투명도 1로 그린다. 나타나는 중이면 drawChats가 따로 그려서 반투명하게 얹는다
+const drawItem = (ctx, it, top, t, s, lib) => {
   const { boxW: W, boxH: H, padding: P } = s;
   const bubble = s.bgMode === 'bubble';
+  const lineH = s.fontSize * s.lineHeight;
+  const baselineOffset = (lineH - s.fontSize) / 2 + s.fontSize * 0.86;
+  // 말풍선은 글자보다 먼저
+  if (bubble && it.bubbleW && s.bubbleOpacity > 0) {
+    if (s.bubbleShadow) {
+      // 그림자는 말풍선 바깥에만 (반투명 말풍선 안쪽까지 어두워지지 않게).
+      // 1) 그림자를 만드는 도형은 캔버스 밖(왼쪽 SHADOW_OFF)에 그리고 그림자만 제자리로 옮긴다
+      // 2) 말풍선 자리의 그림자는 같은 도형으로 destination-out 해서 지운다 (말풍선 칠하기와 가장자리 처리가 똑같아짐)
+      // 예전 방식(도형을 제자리에 + 구멍 뚫은 clip)은 스크롤 중 소수점 위치에서 가장자리에 1px 검은 선이 생겼다.
+      // 이 채팅의 글자·이모티콘은 아직 안 그렸고 다른 말풍선과는 간격이 있어서 지워도 되는 건 그림자뿐이다.
+      ctx.save();
+      ctx.shadowColor = `rgba(0, 0, 0, ${Math.min(1, Math.max(0, Number(s.bubbleShadowStrength) || 0)).toFixed(3)})`;
+      ctx.shadowBlur = Math.max(0, Number(s.bubbleShadowBlur) || 0);
+      ctx.shadowOffsetX = SHADOW_OFF;
+      ctx.shadowOffsetY = Number(s.bubbleShadowY) || 0;
+      ctx.fillStyle = '#000';
+      roundRect(ctx, P - SHADOW_OFF, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha = 1; // 덜 지우면 말풍선 안쪽이 어두워진다 (예전에 앞 채팅의 페이드 알파가 남아 있어서 생겼던 버그)
+      roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.globalAlpha = s.bubbleOpacity;
+    ctx.fillStyle = s.bubbleColor;
+    roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
+    ctx.fill();
+    ctx.restore();
+  }
+  let lineTop = bubble ? top + s.bubblePadTop : top;
+  for (let li = 0; li < it.lines.length; li++) {
+    const lh = it.lineHs[li];
+    const y = lineTop + (lh - lineH) / 2 + baselineOffset; // 줄이 이모티콘 때문에 커져도 글자는 가운데
+    const thisTop = lineTop;
+    lineTop += lh;
+    if (thisTop + lh < 0 || thisTop > H) continue;
+    const x0 = bubble ? P + s.bubblePadLeft : P;
+    // 외곽선을 줄 전체에 먼저 그리고 글자·이모티콘을 나중에 (닉네임→내용처럼 조각이 바뀌는 곳에서 뒤 조각의 외곽선이 앞 글자를 덮지 않게)
+    if (s.outlineWidth > 0) {
+      ctx.lineWidth = s.outlineWidth;
+      ctx.strokeStyle = s.outlineColor;
+      let x = x0;
+      for (const run of it.lines[li]) {
+        if (!run.emoji) {
+          ctx.font = fontOf(s, run.bold);
+          ctx.strokeText(run.text, x, y);
+        }
+        x += run.w;
+      }
+    }
+    let x = x0;
+    for (const run of it.lines[li]) {
+      if (run.emoji) {
+        const e = lib && lib.get(run.emoji);
+        if (e) {
+          const size = emojiSize(s);
+          ctx.drawImage(emojiFrameAt(e, t, s.emojiAnimate), x + (Number(s.emojiGap) || 0), thisTop + (lh - size) / 2 + (Number(s.emojiYOffset) || 0), size * e.aspect, size);
+        }
+      } else {
+        ctx.font = fontOf(s, run.bold);
+        ctx.fillStyle = run.color;
+        ctx.fillText(run.text, x, y);
+      }
+      x += run.w;
+    }
+  }
+};
+
+const drawChats = (ctx, items, t, s, lib) => {
+  const { boxW: W, boxH: H, padding: P } = s;
   const idx = lastIndexAt(items, t);
   if (idx < 0) return;
 
@@ -335,14 +425,8 @@ const drawChats = (ctx, items, t, s, lib) => {
   ctx.beginPath();
   ctx.rect(P / 2, P / 2, W - P, H - P);
   ctx.clip();
-  ctx.textBaseline = 'alphabetic';
-  ctx.lineJoin = 'round';
-  ctx.miterLimit = 2;
-  ctx.letterSpacing = `${Number(s.letterSpacing) || 0}px`; // save/restore로 원래대로 돌아간다
-  ctx.imageSmoothingQuality = 'high'; // 이모티콘 확대/축소
+  setTextState(ctx, s); // save/restore로 원래대로 돌아간다
 
-  const lineH = s.fontSize * s.lineHeight;
-  const baselineOffset = (lineH - s.fontSize) / 2 + s.fontSize * 0.86;
   let bottom = H - P + pending;
   for (let j = idx; j >= 0; j--) {
     const it = items[j];
@@ -350,66 +434,20 @@ const drawChats = (ctx, items, t, s, lib) => {
     if (bottom < 0) break;
     const age = t - it.t;
     const alpha = s.fadeIn ? Math.min(1, 0.15 + age / D) : 1;
-    // 말풍선은 글자보다 먼저 (페이드 인도 같이 받는다)
-    if (bubble && it.bubbleW && s.bubbleOpacity > 0) {
-      if (s.bubbleShadow) {
-        // 그림자는 말풍선 바깥에만 (반투명 말풍선 안쪽까지 어두워지지 않게).
-        // 1) 그림자를 만드는 도형은 캔버스 밖(왼쪽 SHADOW_OFF)에 그리고 그림자만 제자리로 옮긴다
-        // 2) 말풍선 자리의 그림자는 같은 도형으로 destination-out 해서 지운다 (말풍선 칠하기와 가장자리 처리가 똑같아짐)
-        // 예전 방식(도형을 제자리에 + 구멍 뚫은 clip)은 스크롤 중 소수점 위치에서 가장자리에 1px 검은 선이 생겼다.
-        // 이 채팅의 글자·이모티콘은 아직 안 그렸고 다른 말풍선과는 간격이 있어서 지워도 되는 건 그림자뿐이다.
-        ctx.save();
+    if (alpha >= 1) drawItem(ctx, it, top, t, s, lib);
+    else {
+      // 나타나는 중인 채팅은 따로 다 그린 다음 통째로 반투명하게 얹는다.
+      // 외곽선과 글자를 각각 반투명으로 그리면 검은 외곽선이 흰 글자 밑에서 비쳐 글자가 회색으로 탁해졌다.
+      const y0 = Math.max(0, Math.floor(top - FADE_LAYER_MARGIN));
+      const y1 = Math.min(H, Math.ceil(top + it.height + FADE_LAYER_MARGIN));
+      if (y1 > y0) {
+        const layer = fadeLayer(W, H);
+        layer.clearRect(0, y0, W, y1 - y0);
+        setTextState(layer, s);
+        drawItem(layer, it, top, t, s, lib);
         ctx.globalAlpha = alpha;
-        ctx.shadowColor = `rgba(0, 0, 0, ${Math.min(1, Math.max(0, Number(s.bubbleShadowStrength) || 0)).toFixed(3)})`;
-        ctx.shadowBlur = Math.max(0, Number(s.bubbleShadowBlur) || 0);
-        ctx.shadowOffsetX = SHADOW_OFF;
-        ctx.shadowOffsetY = Number(s.bubbleShadowY) || 0;
-        ctx.fillStyle = '#000';
-        roundRect(ctx, P - SHADOW_OFF, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
-        ctx.fill();
-        ctx.restore();
-        ctx.save();
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.globalAlpha = 1; // 앞 채팅의 페이드 인 알파가 남아 있으면 덜 지워진다
-        roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.save();
-      ctx.globalAlpha = alpha * s.bubbleOpacity;
-      ctx.fillStyle = s.bubbleColor;
-      roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
-      ctx.fill();
-      ctx.restore();
-    }
-    ctx.globalAlpha = alpha;
-    let lineTop = bubble ? top + s.bubblePadTop : top;
-    for (let li = 0; li < it.lines.length; li++) {
-      const lh = it.lineHs[li];
-      const y = lineTop + (lh - lineH) / 2 + baselineOffset; // 줄이 이모티콘 때문에 커져도 글자는 가운데
-      const thisTop = lineTop;
-      lineTop += lh;
-      if (thisTop + lh < 0 || thisTop > H) continue;
-      let x = bubble ? P + s.bubblePadLeft : P;
-      for (const run of it.lines[li]) {
-        if (run.emoji) {
-          const e = lib && lib.get(run.emoji);
-          if (e) {
-            const size = emojiSize(s);
-            ctx.drawImage(emojiFrameAt(e, t, s.emojiAnimate), x + (Number(s.emojiGap) || 0), thisTop + (lh - size) / 2 + (Number(s.emojiYOffset) || 0), size * e.aspect, size);
-          }
-          x += run.w;
-          continue;
-        }
-        ctx.font = fontOf(s, run.bold);
-        if (s.outlineWidth > 0) {
-          ctx.lineWidth = s.outlineWidth;
-          ctx.strokeStyle = s.outlineColor;
-          ctx.strokeText(run.text, x, y);
-        }
-        ctx.fillStyle = run.color;
-        ctx.fillText(run.text, x, y);
-        x += run.w;
+        ctx.drawImage(layer.canvas, 0, y0, W, y1 - y0, 0, y0, W, y1 - y0);
+        ctx.globalAlpha = 1;
       }
     }
     bottom = top;
