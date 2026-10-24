@@ -315,6 +315,8 @@ export const drawFrame = (ctx, items, t, s, lib) => {
   }
 };
 
+const SHADOW_OFF = 100000; // 말풍선 그림자용 도형을 그릴 캔버스 밖 거리
+
 const drawChats = (ctx, items, t, s, lib) => {
   const { boxW: W, boxH: H, padding: P } = s;
   const bubble = s.bgMode === 'bubble';
@@ -348,17 +350,24 @@ const drawChats = (ctx, items, t, s, lib) => {
     // 말풍선은 글자보다 먼저 (페이드 인도 같이 받는다)
     if (bubble && it.bubbleW && s.bubbleOpacity > 0) {
       if (s.bubbleShadow) {
-        // 그림자는 말풍선 바깥에만 (반투명 말풍선 안쪽까지 어두워지지 않게)
+        // 그림자는 말풍선 바깥에만 (반투명 말풍선 안쪽까지 어두워지지 않게).
+        // 1) 그림자를 만드는 도형은 캔버스 밖(왼쪽 SHADOW_OFF)에 그리고 그림자만 제자리로 옮긴다
+        // 2) 말풍선 자리의 그림자는 같은 도형으로 destination-out 해서 지운다 (말풍선 칠하기와 가장자리 처리가 똑같아짐)
+        // 예전 방식(도형을 제자리에 + 구멍 뚫은 clip)은 스크롤 중 소수점 위치에서 가장자리에 1px 검은 선이 생겼다.
+        // 이 채팅의 글자·이모티콘은 아직 안 그렸고 다른 말풍선과는 간격이 있어서 지워도 되는 건 그림자뿐이다.
         ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, W, H);
-        roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius, false);
-        ctx.clip('evenodd');
         ctx.globalAlpha = alpha;
         ctx.shadowColor = `rgba(0, 0, 0, ${Math.min(1, s.bubbleOpacity * 0.6).toFixed(3)})`;
         ctx.shadowBlur = 6;
+        ctx.shadowOffsetX = SHADOW_OFF;
         ctx.shadowOffsetY = 2;
         ctx.fillStyle = '#000';
+        roundRect(ctx, P - SHADOW_OFF, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
+        ctx.fill();
+        ctx.restore();
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.globalAlpha = 1; // 앞 채팅의 페이드 인 알파가 남아 있으면 덜 지워진다
         roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
         ctx.fill();
         ctx.restore();
