@@ -1,6 +1,6 @@
 # 치지직 채팅 영상 만들기 (ChzzkChatToVideo)
 
-치지직 / SOOP VOD 채팅 내역(https://chzzkchatexport.vercel.app/)을 **생방송 채팅처럼 올라가는 투명 배경 영상**으로 만들어 주는 Windows 프로그램입니다.
+[치지직 / SOOP VOD 채팅 내역](https://chzzkchatexport.vercel.app/)을 **생방송 채팅처럼 올라가는 투명 배경 영상**으로 만들어 주는 Windows 프로그램입니다.
 만든 영상은 프리미어 프로 같은 편집 프로그램에서 원본 영상 위에 그대로 얹어 쓸 수 있어요.
 
 ## 다운로드
