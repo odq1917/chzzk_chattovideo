@@ -19,7 +19,7 @@
 - **Electron 45** + **ffmpeg-static**(ffmpeg 실행 파일 동봉). 번들러 없음. 의존성은 `ffmpeg-static` 하나, 개발 의존성은 `electron`, `electron-builder`.
 - 메인/preload는 CommonJS, 화면(`src/ui/`)은 `<script type="module">` ES 모듈.
 - 그리기는 화면(렌더러)의 Canvas 2D로, 인코딩은 ffmpeg 자식 프로세스로. 미리보기와 결과 영상이 **같은 그리기 코드**(`renderer.js`)를 쓴다 → 미리보기에서 본 그대로 나온다.
-- 버전: `package.json`의 `version`과 `src/ui/app.js`의 `VERSION` 두 곳 (같이 올린다). 현재 0.3.0 (말풍선 — **사용자 테스트 중, 아직 Release 안 함**. 사용자 지시: "깃허브에 릴리즈하기 전에 내가 먼저 써볼거야". README도 Release 때 고친다).
+- 버전: `package.json`의 `version`과 `src/ui/app.js`의 `VERSION` 두 곳 (같이 올린다). 현재 0.3.0 (말풍선·이모티콘·글자 그림자 등 — 사용자가 로컬 exe로 테스트한 뒤 2026-10-25 Release 요청).
 
 ## 3. 파일 구조
 
