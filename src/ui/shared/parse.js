@@ -11,6 +11,9 @@ const parseTime = (s) => {
   return (Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000 + ms;
 };
 
+// 후원 라벨은 종류만 남긴다 ("영상 후원 3,340원" → "영상 후원"). 후원 금액은 영상에 넣지 않는다
+const donationKind = (s) => String(s || '').replace(/\s*\d[\d,]*\s*원/g, '').trim();
+
 // RFC 4180 CSV (따옴표 안의 쉼표/줄바꿈/"" 처리)
 const parseCsvRows = (text) => {
   const rows = [];
@@ -71,13 +74,13 @@ const parseCsv = (text) => {
       ms,
       nickname: iNick >= 0 ? r[iNick] ?? '' : '',
       message: iMsg >= 0 ? r[iMsg] ?? '' : '',
-      donation: iDonation >= 0 ? r[iDonation] ?? '' : '',
+      donation: iDonation >= 0 ? donationKind(r[iDonation]) : '',
     });
   }
   return chats;
 };
 
-// [00:10:05] <닉네임> 내용   (앞에 {1} 같은 VOD 번호, [텍스트 후원 1,000원] 같은 후원 라벨이 있어도 됨)
+// [00:10:05] <닉네임> 내용   (앞에 {1} 같은 VOD 번호, [영상 후원] 같은 후원 라벨이 있어도 됨)
 const LINE = /^(?:\{\d+\}\s*)?\[(\d{1,3}:\d{2}:\d{2})\]\s*(?:<([^>]*)>\s*)?(?:\[((?:텍스트|영상|미션)?\s*후원[^\]]*)\]\s*)?(.*)$/;
 
 const EMOJI_LINE = /^#이모티콘\s+(\S+)\s+(\S+)\s*$/;
@@ -93,7 +96,7 @@ const parseLines = (text) => {
     }
     const m = line.match(LINE);
     if (!m) continue;
-    chats.push({ ms: parseTime(m[1]), nickname: m[2] ?? '', message: m[4] ?? '', donation: m[3] ?? '' });
+    chats.push({ ms: parseTime(m[1]), nickname: m[2] ?? '', message: m[4] ?? '', donation: donationKind(m[3]) });
   }
   return chats;
 };

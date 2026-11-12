@@ -4,7 +4,7 @@ import { createEmojiPanel } from './emoji.js';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'chattovideo:settings';
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 $('version').textContent = `v${VERSION}`;
 
 // ---------- 상태 ----------
@@ -678,7 +678,7 @@ if (smokeOut) {
         const n = sec % 37 >= 32 ? 0 : Math.floor(rnd() * 7);
         for (let k = 0; k < n; k++) {
           const i = sample.length;
-          sample.push({ ms: sec * 1000, nickname: names[i % names.length], message: `테스트 채팅 ${i + 1} 입니다 ㅋㅋㅋ${rnd() < 0.3 ? ' 줄바꿈이 되는지 보려고 조금 길게 써봅니다' : ''}`, donation: i === 7 ? '영상 후원 3,000원' : '' });
+          sample.push({ ms: sec * 1000, nickname: names[i % names.length], message: `테스트 채팅 ${i + 1} 입니다 ㅋㅋㅋ${rnd() < 0.3 ? ' 줄바꿈이 되는지 보려고 조금 길게 써봅니다' : ''}`, donation: i === 7 ? '영상 후원' : '' });
         }
       }
       const fmtParam = new URLSearchParams(location.search).get('format');
