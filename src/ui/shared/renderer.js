@@ -1,4 +1,4 @@
-// 채팅 영상 렌더러. 브라우저 미리보기(CanvasRenderingContext2D)와 Node 렌더링(@napi-rs/canvas)이 같은 코드를 쓴다.
+// 채팅 영상 렌더러. 미리보기와 영상 출력이 같은 코드(Canvas 2D)로 그린다.
 // 그리기 좌표는 모두 "채팅 상자" 기준(0,0 = 상자 왼쪽 위)이다.
 
 export const NICK_PALETTE = [
@@ -31,9 +31,9 @@ export const DEFAULT_SETTINGS = {
   messageGap: 6, // 채팅 사이 간격 (px)
   textColor: '#ffffff',
   textBold: true, // 채팅 내용 굵게
-  outlineWidth: 2.5, // 글자 외곽선 두께 (0이면 없음). 4였는데 참고 화면보다 두껍고 획이 붙은 곳에서 뭉쳐 보여서 2.5 + 글자 그림자로
+  outlineWidth: 2.5, // 글자 외곽선 두께 (0이면 없음)
   outlineColor: '#000000',
-  // 글자 그림자 (외곽선 밑에 오른쪽 아래로 깔리는 옅은 그림자 — 참고 화면의 입체감)
+  // 글자 그림자 (외곽선 밑에 오른쪽 아래로 깔리는 옅은 그림자)
   textShadow: true,
   textShadowOpacity: 0.6,
   textShadowBlur: 2,
@@ -54,7 +54,7 @@ export const DEFAULT_SETTINGS = {
   bgOpacity: 0, // 0~1
   bgRadius: 12,
   padding: 12, // 채팅 상자 안쪽 여백 (모든 모드 공통)
-  // 말풍선 (기본값은 사용자가 준 1080p 참고 화면을 재서 맞춤: 회색 반투명, 글자 좌우 12px, 둥글기 12px)
+  // 말풍선
   bubbleColor: '#808080',
   bubbleOpacity: 0.25, // 0~1
   bubbleRadius: 12, // 높이의 절반 이상이면 알약 모양
@@ -64,10 +64,10 @@ export const DEFAULT_SETTINGS = {
   bubblePadBottom: 7, // 마지막 줄 아래 여백 (줄 높이 기준)
   bubbleGap: 16, // 말풍선 사이 간격
   bubbleShadow: true, // 아래쪽 옅은 그림자
-  bubbleShadowStrength: 0.08, // 그림자 진하기 (0~1). 0.15에서 "딱딱하다"는 의견 → 원본 방송 화면을 재서 절반쯤으로
+  bubbleShadowStrength: 0.08, // 그림자 진하기 (0~1)
   bubbleShadowBlur: 6, // 그림자 퍼짐 (px)
   bubbleShadowY: 2, // 그림자가 아래로 내려가는 거리 (px)
-  // 이모티콘 ({:이름:}) — 기본 크기는 참고 화면 기준 (글자 ~26px에 이모티콘 ~40px)
+  // 이모티콘 ({:이름:})
   emojiScale: 1.5, // 글자 크기 대비
   emojiGap: 2, // 이모티콘 좌우 간격 (px)
   emojiYOffset: 0, // 위아래 위치 조정 (px, +면 아래로)
@@ -352,8 +352,8 @@ const drawItem = (ctx, it, top, t, s, lib) => {
     if (s.bubbleShadow) {
       // 그림자는 말풍선 바깥에만 (반투명 말풍선 안쪽까지 어두워지지 않게).
       // 1) 그림자를 만드는 도형은 캔버스 밖(왼쪽 SHADOW_OFF)에 그리고 그림자만 제자리로 옮긴다
-      // 2) 말풍선 자리의 그림자는 같은 도형으로 destination-out 해서 지운다 (말풍선 칠하기와 가장자리 처리가 똑같아짐)
-      // 예전 방식(도형을 제자리에 + 구멍 뚫은 clip)은 스크롤 중 소수점 위치에서 가장자리에 1px 검은 선이 생겼다.
+      // 2) 말풍선 자리의 그림자는 같은 도형으로 destination-out 해서 지운다 (말풍선 칠하기와 가장자리 처리가 똑같아서
+      //    소수점 위치에서도 가장자리에 선이 생기지 않는다)
       // 이 채팅의 글자·이모티콘은 아직 안 그렸고 다른 말풍선과는 간격이 있어서 지워도 되는 건 그림자뿐이다.
       ctx.save();
       ctx.shadowColor = `rgba(0, 0, 0, ${Math.min(1, Math.max(0, Number(s.bubbleShadowStrength) || 0)).toFixed(3)})`;
@@ -366,7 +366,7 @@ const drawItem = (ctx, it, top, t, s, lib) => {
       ctx.restore();
       ctx.save();
       ctx.globalCompositeOperation = 'destination-out';
-      ctx.globalAlpha = 1; // 덜 지우면 말풍선 안쪽이 어두워진다 (예전에 앞 채팅의 페이드 알파가 남아 있어서 생겼던 버그)
+      ctx.globalAlpha = 1; // 덜 지우면 말풍선 안쪽이 어두워진다
       roundRect(ctx, P, top, it.bubbleW, it.bubbleH, s.bubbleRadius);
       ctx.fill();
       ctx.restore();
@@ -463,7 +463,7 @@ const drawChats = (ctx, items, t, s, lib) => {
     if (alpha >= 1) drawItem(ctx, it, top, t, s, lib);
     else {
       // 나타나는 중인 채팅은 따로 다 그린 다음 통째로 반투명하게 얹는다.
-      // 외곽선과 글자를 각각 반투명으로 그리면 검은 외곽선이 흰 글자 밑에서 비쳐 글자가 회색으로 탁해졌다.
+      // (외곽선과 글자를 각각 반투명으로 그리면 외곽선이 글자 밑으로 비쳐 글자가 탁해진다)
       const y0 = Math.max(0, Math.floor(top - FADE_LAYER_MARGIN));
       const y1 = Math.min(H, Math.ceil(top + it.height + FADE_LAYER_MARGIN));
       if (y1 > y0) {

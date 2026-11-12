@@ -11,12 +11,12 @@ $('version').textContent = `v${VERSION}`;
 const loadSettings = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    // v0.2.0까지 저장된 설정: 배경 모양이 없었다. 상자 배경을 켜 두고 쓰던 사람은 상자 모드로 이어서
+    // 이전 버전 설정 이어받기: 배경 모양이 없던 설정에서 상자 배경을 켜 두었으면 상자 모드로
     if (saved.bgMode === undefined && saved.bgOpacity > 0) saved.bgMode = 'box';
-    // 0.3.0 테스트판의 좌우/위아래 여백 → 왼쪽·오른쪽·위·아래 따로
+    // 좌우/위아래 여백 → 왼쪽·오른쪽·위·아래 따로
     if (saved.bubblePadX !== undefined && saved.bubblePadLeft === undefined) saved.bubblePadLeft = saved.bubblePadRight = saved.bubblePadX;
     if (saved.bubblePadY !== undefined && saved.bubblePadTop === undefined) saved.bubblePadTop = saved.bubblePadBottom = saved.bubblePadY;
-    // 글자 그림자가 생기기 전(0.3.0 테스트판) 기본 외곽선 4를 그대로 쓰던 사람은 새 기본값으로
+    // 글자 그림자가 없던 설정에서 예전 기본 외곽선(4)을 그대로 쓰고 있었으면 새 기본값으로
     if (saved.textShadow === undefined && saved.outlineWidth === 4) saved.outlineWidth = DEFAULT_SETTINGS.outlineWidth;
     delete saved.bubblePadX;
     delete saved.bubblePadY;
